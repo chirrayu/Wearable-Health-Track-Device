@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+websockets
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+numpy
+python-dotenv
+python-dateutil
+boto3
