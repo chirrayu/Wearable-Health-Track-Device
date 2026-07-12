@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+websockets
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+numpy
+python-dotenv
+python-dateutil
+boto3
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt<4.1.0
+firebase-admin
+python-multipart
