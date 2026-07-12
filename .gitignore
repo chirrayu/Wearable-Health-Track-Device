@@ -1,1 +1,72 @@
+# ==========================================
+# 1. Operating System Files (OS Junk)
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
+# ==========================================
+# 2. Sensitive Files (API Keys & Secrets)
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+credentials.json
+
+# ==========================================
+# 3. Package Dependencies & Node Modules
+# ==========================================
+node_modules/
+jspm_packages/
+bower_components/
+.npm
+.yarn/
+vendor/
+venv/
+.venv/
+env/
+
+# ==========================================
+# 4. Build Outputs, Caches & Distribution
+# ==========================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+*.exe
+*.dll
+*.so
+*.dylib
+*.pyc
+__pycache__/
+
+# ==========================================
+# 5. Logs and Databases
+# ==========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+*.sqlite
+*.db
+
+# ==========================================
+# 6. IDEs & Text Editors Settings
+# ==========================================
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
