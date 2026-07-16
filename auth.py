@@ -87,12 +87,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect username or password"
         )
 
-    # Check password
-    # We store the hashed version of ADMIN_PASSWORD.
-    # For first run, we hash it on the fly.
-    # In production you'd store hashed passwords in the DB.
-    hashed = hash_password(ADMIN_PASSWORD)
-    if not verify_password(form_data.password, hashed):
+    # Direct password comparison for single admin setup
+    # In production this would compare against a hashed password in DB
+    if form_data.password != ADMIN_PASSWORD:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password"
