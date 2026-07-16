@@ -1,0 +1,224 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.example.healthmonitor"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+7-->INJECTED
+8        android:minSdkVersion="27"
+8-->INJECTED
+9        android:targetSdkVersion="36" />
+9-->INJECTED
+10
+11    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+11-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:4:5-77
+11-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:4:22-74
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:5:5-67
+12-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:5:22-64
+13    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+13-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:6:5-79
+13-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:6:22-76
+14    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+14-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:7:5-81
+14-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:7:22-78
+15    <uses-permission android:name="android.permission.INTERNET" />
+15-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:5:5-67
+15-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:5:22-64
+16    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+16-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:9:5-79
+16-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:9:22-76
+17
+18    <uses-feature
+18-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:26:5-28:35
+19        android:glEsVersion="0x00020000"
+19-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:27:9-41
+20        android:required="true" />
+20-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:28:9-32
+21
+22    <queries>
+22-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:30:5-34:15
+23
+24        <!-- Needs to be explicitly declared on Android R+ -->
+25        <package android:name="com.google.android.apps.maps" />
+25-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:33:9-64
+25-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:33:18-61
+26    </queries>
+27
+28    <permission
+28-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:22:5-24:47
+29        android:name="com.example.healthmonitor.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+29-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:23:9-81
+30        android:protectionLevel="signature" />
+30-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:24:9-44
+31
+32    <uses-permission android:name="com.example.healthmonitor.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+32-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:26:5-97
+32-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:26:22-94
+33
+34    <application
+34-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:10:5-32:19
+35        android:allowBackup="true"
+35-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:13:9-35
+36        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+36-->[androidx.core:core:1.16.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\b497d4e7e1a065040247f69403015310\transformed\core-1.16.0\AndroidManifest.xml:28:18-86
+37        android:dataExtractionRules="@xml/data_extraction_rules"
+37-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:14:9-65
+38        android:debuggable="true"
+39        android:extractNativeLibs="false"
+39-->INJECTED
+40        android:fullBackupContent="@xml/backup_rules"
+40-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:15:9-54
+41        android:icon="@mipmap/ic_launcher"
+41-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:16:9-43
+42        android:label="@string/app_name"
+42-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:17:9-41
+43        android:roundIcon="@mipmap/ic_launcher_round"
+43-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:18:9-54
+44        android:supportsRtl="true"
+44-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:19:9-35
+45        android:testOnly="true"
+46        android:theme="@style/Theme.HealthMonitor"
+46-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:20:9-51
+47        android:usesCleartextTraffic="true" >
+47-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:12:9-44
+48        <activity
+48-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:21:9-31:20
+49            android:name="com.example.healthmonitor.MainActivity"
+49-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:22:13-41
+50            android:exported="true"
+50-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:23:13-36
+51            android:label="@string/app_name"
+51-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:24:13-45
+52            android:theme="@style/Theme.HealthMonitor" >
+52-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:25:13-55
+53            <intent-filter>
+53-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:26:13-30:29
+54                <action android:name="android.intent.action.MAIN" />
+54-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:27:17-69
+54-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:27:25-66
+55
+56                <category android:name="android.intent.category.LAUNCHER" />
+56-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:29:17-77
+56-->E:\app\software\frontend\app\src\main\AndroidManifest.xml:29:27-74
+57            </intent-filter>
+58        </activity>
+59        <activity
+59-->[androidx.compose.ui:ui-tooling-android:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\019bc0ad6d1e1d4fa9b9f858b737c7f8\transformed\ui-tooling\AndroidManifest.xml:23:9-25:39
+60            android:name="androidx.compose.ui.tooling.PreviewActivity"
+60-->[androidx.compose.ui:ui-tooling-android:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\019bc0ad6d1e1d4fa9b9f858b737c7f8\transformed\ui-tooling\AndroidManifest.xml:24:13-71
+61            android:exported="true" />
+61-->[androidx.compose.ui:ui-tooling-android:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\019bc0ad6d1e1d4fa9b9f858b737c7f8\transformed\ui-tooling\AndroidManifest.xml:25:13-36
+62        <activity
+62-->[androidx.compose.ui:ui-test-manifest:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\553bd32765838f1add94076e5aeb2ec2\transformed\ui-test-manifest-1.10.4\AndroidManifest.xml:23:9-26:79
+63            android:name="androidx.activity.ComponentActivity"
+63-->[androidx.compose.ui:ui-test-manifest:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\553bd32765838f1add94076e5aeb2ec2\transformed\ui-test-manifest-1.10.4\AndroidManifest.xml:24:13-63
+64            android:exported="true"
+64-->[androidx.compose.ui:ui-test-manifest:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\553bd32765838f1add94076e5aeb2ec2\transformed\ui-test-manifest-1.10.4\AndroidManifest.xml:25:13-36
+65            android:theme="@android:style/Theme.Material.Light.NoActionBar" /> <!-- Needs to be explicitly declared on P+ -->
+65-->[androidx.compose.ui:ui-test-manifest:1.10.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\553bd32765838f1add94076e5aeb2ec2\transformed\ui-test-manifest-1.10.4\AndroidManifest.xml:26:13-76
+66        <uses-library
+66-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:39:9-41:40
+67            android:name="org.apache.http.legacy"
+67-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:40:13-50
+68            android:required="false" />
+68-->[com.google.android.gms:play-services-maps:19.0.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\eed6d2b4933939bb3e1bb1b1bb3634e5\transformed\play-services-maps-19.0.0\AndroidManifest.xml:41:13-37
+69
+70        <activity
+70-->[com.google.android.gms:play-services-base:18.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\1cd2bcaf2a3fc82cff7ef67c7b42cc58\transformed\play-services-base-18.5.0\AndroidManifest.xml:5:9-173
+71            android:name="com.google.android.gms.common.api.GoogleApiActivity"
+71-->[com.google.android.gms:play-services-base:18.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\1cd2bcaf2a3fc82cff7ef67c7b42cc58\transformed\play-services-base-18.5.0\AndroidManifest.xml:5:19-85
+72            android:exported="false"
+72-->[com.google.android.gms:play-services-base:18.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\1cd2bcaf2a3fc82cff7ef67c7b42cc58\transformed\play-services-base-18.5.0\AndroidManifest.xml:5:146-170
+73            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+73-->[com.google.android.gms:play-services-base:18.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\1cd2bcaf2a3fc82cff7ef67c7b42cc58\transformed\play-services-base-18.5.0\AndroidManifest.xml:5:86-145
+74
+75        <meta-data
+75-->[com.google.android.gms:play-services-basement:18.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\4660ee7ceeda95d6ee23719dceedfeee\transformed\play-services-basement-18.4.0\AndroidManifest.xml:6:9-122
+76            android:name="com.google.android.gms.version"
+76-->[com.google.android.gms:play-services-basement:18.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\4660ee7ceeda95d6ee23719dceedfeee\transformed\play-services-basement-18.4.0\AndroidManifest.xml:6:20-65
+77            android:value="@integer/google_play_services_version" />
+77-->[com.google.android.gms:play-services-basement:18.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\4660ee7ceeda95d6ee23719dceedfeee\transformed\play-services-basement-18.4.0\AndroidManifest.xml:6:66-119
+78
+79        <provider
+79-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:24:9-32:20
+80            android:name="androidx.startup.InitializationProvider"
+80-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:25:13-67
+81            android:authorities="com.example.healthmonitor.androidx-startup"
+81-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:26:13-68
+82            android:exported="false" >
+82-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:27:13-37
+83            <meta-data
+83-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:29:13-31:52
+84                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+84-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:30:17-75
+85                android:value="androidx.startup" />
+85-->[androidx.emoji2:emoji2:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\59ec4d2f52a384bf661f73a95a08aaa9\transformed\emoji2-1.4.0\AndroidManifest.xml:31:17-49
+86            <meta-data
+86-->[androidx.lifecycle:lifecycle-process:2.9.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\e60a6a2bf2f5afb086487e45ef412e4a\transformed\lifecycle-process-2.9.4\AndroidManifest.xml:29:13-31:52
+87                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+87-->[androidx.lifecycle:lifecycle-process:2.9.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\e60a6a2bf2f5afb086487e45ef412e4a\transformed\lifecycle-process-2.9.4\AndroidManifest.xml:30:17-78
+88                android:value="androidx.startup" />
+88-->[androidx.lifecycle:lifecycle-process:2.9.4] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\e60a6a2bf2f5afb086487e45ef412e4a\transformed\lifecycle-process-2.9.4\AndroidManifest.xml:31:17-49
+89            <meta-data
+89-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:29:13-31:52
+90                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+90-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:30:17-85
+91                android:value="androidx.startup" />
+91-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:31:17-49
+92        </provider>
+93
+94        <uses-library
+94-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:23:9-25:40
+95            android:name="androidx.window.extensions"
+95-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:24:13-54
+96            android:required="false" />
+96-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:25:13-37
+97        <uses-library
+97-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:26:9-28:40
+98            android:name="androidx.window.sidecar"
+98-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:27:13-51
+99            android:required="false" />
+99-->[androidx.window:window:1.5.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:28:13-37
+100
+101        <receiver
+101-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:34:9-52:20
+102            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+102-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:35:13-76
+103            android:directBootAware="false"
+103-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:36:13-44
+104            android:enabled="true"
+104-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:37:13-35
+105            android:exported="true"
+105-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:38:13-36
+106            android:permission="android.permission.DUMP" >
+106-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:39:13-57
+107            <intent-filter>
+107-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:40:13-42:29
+108                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+108-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:41:17-91
+108-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:41:25-88
+109            </intent-filter>
+110            <intent-filter>
+110-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:43:13-45:29
+111                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+111-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:44:17-85
+111-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:44:25-82
+112            </intent-filter>
+113            <intent-filter>
+113-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:46:13-48:29
+114                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+114-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:47:17-88
+114-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:47:25-85
+115            </intent-filter>
+116            <intent-filter>
+116-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:49:13-51:29
+117                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+117-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:50:17-95
+117-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\lugo6\.gradle\caches\9.4.1\transforms\6f017c93a46937b3c3d62a9617ef2586\transformed\profileinstaller-1.4.0\AndroidManifest.xml:50:25-92
+118            </intent-filter>
+119        </receiver>
+120    </application>
+121
+122</manifest>

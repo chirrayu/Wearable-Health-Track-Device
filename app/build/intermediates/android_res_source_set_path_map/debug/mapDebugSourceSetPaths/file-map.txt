@@ -1,0 +1,8 @@
+com.example.healthmonitor.app-pngs-0 E:\app\software\frontend\app\build\generated\res\pngs\debug
+com.example.healthmonitor.app-updated_navigation_xml-1 E:\app\software\frontend\app\build\generated\updated_navigation_xml\debug
+com.example.healthmonitor.app-packageDebugResources-2 E:\app\software\frontend\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.example.healthmonitor.app-packageDebugResources-3 E:\app\software\frontend\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.example.healthmonitor.app-debug-4 E:\app\software\frontend\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.example.healthmonitor.app-debug-5 E:\app\software\frontend\app\src\debug\res
+com.example.healthmonitor.app-main-6 E:\app\software\frontend\app\src\main\res
+gradleHome-0 C:\Users\lugo6\.gradle
