@@ -45,15 +45,17 @@ import androidx.compose.animation.core.tween
 import coil.compose.AsyncImage
 
 // ── Colors ────────────────────────────────────────────────────────
-private val bgDark      = Color(0xFF07111F)
-private val cardDark    = Color(0xFF081B33)
-private val borderDark  = Color(0xFF1A3A5C)
-private val textMuted   = Color(0xFF6B7F99)
-private val accentBlue  = Color(0xFF00C2FF)
-private val statusGreen = Color(0xFF00E676)
-private val statusYellow= Color(0xFFFFD600)
-private val statusRed   = Color(0xFFFF1744)
-private val statusGray  = Color(0xFF757575)
+// Not private: reused across screens (e.g. ConfigureSuitScreen) to keep a
+// single consistent tactical color palette for the whole app.
+val bgDark      = Color(0xFF07111F)
+val cardDark    = Color(0xFF081B33)
+val borderDark  = Color(0xFF1A3A5C)
+val textMuted   = Color(0xFF6B7F99)
+val accentBlue  = Color(0xFF00C2FF)
+val statusGreen = Color(0xFF00E676)
+val statusYellow= Color(0xFFFFD600)
+val statusRed   = Color(0xFFFF1744)
+val statusGray  = Color(0xFF757575)
 
 fun statusColor(status: String): Color = when (status) {
     "stable"   -> statusGreen

@@ -296,6 +296,9 @@ fun Dashboard(
                                     LiveMapScreen()
                                 }
                             }
+                            "Configure Suit" -> {
+                                ConfigureSuitScreen()
+                            }
                             else -> {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text("Coming soon", color = Color(0xFF6B7F99))
