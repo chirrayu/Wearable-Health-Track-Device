@@ -227,12 +227,25 @@ def get_squad_map(
             .order_by(desc(LocationModel.recorded_at))\
             .first()
 
+        second_latest = db.query(LocationModel)\
+            .filter(LocationModel.soldier_id == soldier.id)\
+            .order_by(desc(LocationModel.recorded_at))\
+            .offset(1)\
+            .first()
+
         minutes_ago = None
+        is_moving = False
+
         if latest:
             minutes_ago = round(
                 (datetime.utcnow() - latest.recorded_at).total_seconds() / 60,
                 1
             )
+            # Consider moving if position changed in last reading
+            if second_latest:
+                lat_changed = abs(latest.latitude - second_latest.latitude) > 0.00001
+                lng_changed = abs(latest.longitude - second_latest.longitude) > 0.00001
+                is_moving = lat_changed or lng_changed
 
         result.append(AllSoldiersMapOut(
             soldier_id=soldier.id,
@@ -245,7 +258,7 @@ def get_squad_map(
             longitude=latest.longitude if latest else None,
             last_seen=latest.recorded_at if latest else None,
             minutes_ago=minutes_ago,
-            is_moving=False
+            is_moving=is_moving
         ))
 
     return result

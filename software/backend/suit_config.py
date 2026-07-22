@@ -163,14 +163,13 @@ def update_suit_config(
 # Separate endpoint since emergency mode has side effects:
 # marks soldier critical + fires an alert.
 @router.post("/{soldier_id}/emergency", response_model=SuitConfigOut)
-def toggle_emergency_mode(
+async def toggle_emergency_mode(
     soldier_id: str,
     body: EmergencyModeIn,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin)
 ):
     from alerts import evaluate_and_create_alerts
-    import asyncio
 
     soldier = db.query(SoldierModel).filter(
         SoldierModel.id == soldier_id
@@ -189,20 +188,19 @@ def toggle_emergency_mode(
     config.updated_at = datetime.utcnow()
 
     if body.enabled:
-        # Mark soldier critical immediately
+        # Capture status before marking critical so rules engine sees the transition
+        prev_status = soldier.status
         soldier.status = "critical"
         db.commit()
-
-        # Fire emergency alert through the rules engine
-        asyncio.create_task(
-            evaluate_and_create_alerts(
-                soldier=soldier,
-                hr=None,
-                spo2=None,
-                temp=None,
-                battery=None,
-                db=db
-            )
+        # Await alerts processing
+        await evaluate_and_create_alerts(
+            soldier=soldier,
+            hr=None,
+            spo2=None,
+            temp=None,
+            battery=None,
+            db=db,
+            prev_status=prev_status
         )
     else:
         db.commit()

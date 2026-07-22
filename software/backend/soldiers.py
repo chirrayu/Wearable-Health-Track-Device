@@ -197,9 +197,14 @@ def delete_soldier(
     if not soldier:
         raise HTTPException(status_code=404, detail="Soldier not found")
 
-    # Delete photo file if exists
-    if soldier.photo_path and os.path.exists(soldier.photo_path):
-        os.remove(soldier.photo_path)
+    # Delete photo from S3 if the soldier has one.
+    # photo_path stores an S3 key (e.g. "soldiers/<id>/photo.jpeg"),
+    # not a local filesystem path — use delete_photo(), not os.remove().
+    if soldier.photo_path:
+        try:
+            delete_photo(soldier.photo_path)
+        except Exception:
+            pass  # already gone from S3, continue with DB deletion
 
     db.delete(soldier)
     db.commit()
@@ -207,7 +212,6 @@ def delete_soldier(
 
 
 # POST /soldiers/{soldier_id}/photo — upload profile photo
-@router.post("/{soldier_id}/photo")
 @router.post("/{soldier_id}/photo")
 async def upload_soldier_photo(
     soldier_id: str,
@@ -248,8 +252,6 @@ async def upload_soldier_photo(
     return {"message": "Photo uploaded to S3", "photo_url": photo_url}
 
 # GET /soldiers/photo/{soldier_id} — serve the photo
-
-@router.get("/photo/{soldier_id}")
 @router.get("/photo/{soldier_id}")
 def get_photo(soldier_id: str, db: Session = Depends(get_db)):
     soldier = db.query(SoldierModel).filter(

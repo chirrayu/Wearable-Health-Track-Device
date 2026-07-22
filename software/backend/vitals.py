@@ -170,6 +170,9 @@ async def receive_vitals(
     )
     db.add(vitals)
 
+    # Capture status before mutation so rules engine can detect transitions
+    prev_status = soldier.status
+
     # Auto-update soldier status based on vitals
     flags = get_status_flags(body.hr, body.spo2, body.temp, body.battery)
     if any("FAST_HR" in f or "LOW_SPO2" in f or "HIGH_TEMP" in f for f in flags):
@@ -190,14 +193,16 @@ async def receive_vitals(
     db.commit()
     db.refresh(vitals)
 
-    # Run the rules engine and create alerts if thresholds are crossed
+    # Run the rules engine and create alerts if thresholds are crossed.
+    # prev_status lets it gate status-based rules on transition only.
     await evaluate_and_create_alerts(
         soldier=soldier,
         hr=body.hr,
         spo2=body.spo2,
         temp=body.temp,
         battery=body.battery,
-        db=db
+        db=db,
+        prev_status=prev_status
     )
     await push_vitals_update(body.soldier_id, db)
     return vitals_to_out(vitals)

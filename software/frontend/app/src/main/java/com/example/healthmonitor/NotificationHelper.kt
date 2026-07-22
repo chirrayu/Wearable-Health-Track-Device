@@ -7,7 +7,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
-object `NotificationHelper` {
+object NotificationHelper {
 
     private const val CHANNEL_ID = "triage_ai_alerts"
     private const val CHANNEL_NAME = "Triage AI Alerts"

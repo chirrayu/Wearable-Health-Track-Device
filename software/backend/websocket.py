@@ -214,6 +214,14 @@ async def websocket_connect(
     websocket: WebSocket,
     feed: str = "all"
 ):
+    # NOTE: This session is held for the entire lifetime of the WebSocket
+    # connection rather than per-message. For long-lived connections (hours)
+    # this means one DB connection is tied up per client and reads may see
+    # stale SQLAlchemy-level caches. This is acceptable here because the
+    # socket's job is to *receive* pushes (which carry their own fresh db
+    # sessions from the originating route), not to make frequent independent
+    # queries. The snapshot on connect and request_snapshot messages are the
+    # only DB reads this handler makes directly.
     db = next(get_db())
 
     await manager.connect(websocket, feed)
