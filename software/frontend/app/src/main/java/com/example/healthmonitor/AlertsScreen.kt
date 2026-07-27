@@ -31,11 +31,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val bgDark      = Color(0xFF07111F)
-private val cardDark    = Color(0xFF081B33)
-private val borderDark  = Color(0xFF1A3A5C)
-private val textMuted   = Color(0xFF6B7F99)
-private val accentBlue  = Color(0xFF00C2FF)
+// NOTE: bgDark, cardDark, borderDark, textMuted, accentBlue are now declared
+// (public) in SoldiersScreen.kt and shared across the app. Do NOT redeclare
+// them here — that caused "Conflicting declarations" / overload-resolution
+// ambiguity across the whole file.
+
 private val critRed     = Color(0xFFFF445A)
 private val warnYellow  = Color(0xFFFFC533)
 private val infoBlue    = Color(0xFF00C2FF)

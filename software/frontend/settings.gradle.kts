@@ -23,6 +23,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "HealthMonitor"
-
 include(":app")
-project(":app").projectDir = file("software/frontend/app")

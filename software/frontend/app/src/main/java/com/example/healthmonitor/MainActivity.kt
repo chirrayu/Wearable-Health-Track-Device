@@ -40,8 +40,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.WifiOff
 
 import androidx.compose.material3.Card
@@ -66,10 +66,11 @@ import com.google.android.gms.location.*
 
 // ── App State ─────────────────────────────────────────────────────
 object AppState {
-    var operatorName  = mutableStateOf("GHOST-6")
-    var criticalCount = mutableStateOf(1)
-    var alertCount = mutableStateOf(0)
-    var casualties    = mutableStateOf(listOf(
+    var operatorName     = mutableStateOf("GHOST-6")
+    var criticalCount    = mutableStateOf(1)
+    var alertCount       = mutableStateOf(0)
+    var connectionStatus = mutableStateOf("OFFLINE")   // "CONNECTING" | "LIVE" | "OFFLINE" — set by WebSocketManager
+    var casualties       = mutableStateOf(listOf(
         CasualtyItem("Sgt. Yuki Tanaka",  "Charlie · Scout",  "offline",  95),
         CasualtyItem("Pvt. Ethan Cruz",   "Bravo · Rifleman", "critical", 88),
         CasualtyItem("Cpl. James Okafor", "Bravo · Rifleman", "serious",  54),
@@ -116,8 +117,12 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // ⚠ CHANGED — previously this called Dashboard() directly, so the
+        // app always skipped straight past login with no gate at all.
+        // AppRoot() now shows LoginScreen first and only renders Dashboard
+        // after a successful login.
         setContent {
-            Dashboard(
+            AppRoot(
                 onWebViewReady = { wv -> webViewRef = wv }
             )
         }
@@ -159,12 +164,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ── Stop GPS when app closes ─────────────────────────────────
+    // ── Stop GPS + WebSocket when app closes ─────────────────────
     override fun onDestroy() {
         super.onDestroy()
         if (::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
+        // ⚠ NEW — WebSocketManager.connect() was previously never called
+        // anywhere, so there was nothing to disconnect either. Now that
+        // AppRoot() starts it on login, clean it up here too.
+        WebSocketManager.disconnect()
+    }
+}
+
+
+// ── App Root — login gate ─────────────────────────────────────────
+// ⚠ NEW — this composable is the actual fix. Previously MainActivity
+// rendered Dashboard() unconditionally, so LoginScreen (which already
+// existed as a file) was never shown, and WebSocketManager.connect()
+// was never called anywhere, so the connection badge sat at its default
+// "OFFLINE" value forever regardless of whether the backend was reachable.
+@Composable
+fun AppRoot(onWebViewReady: (WebView) -> Unit) {
+    val context = LocalContext.current
+    var isLoggedIn by remember { mutableStateOf(false) }
+
+    if (isLoggedIn) {
+        Dashboard(onWebViewReady = onWebViewReady)
+    } else {
+        LoginScreen(onLoginSuccess = {
+            isLoggedIn = true
+            WebSocketManager.connect(context)
+        })
     }
 }
 
@@ -296,6 +327,18 @@ fun Dashboard(
                                     LiveMapScreen()
                                 }
                             }
+                            "Configure Suit" -> {
+                                ConfigureSuitScreen()
+                            }
+                            "Casualty Queue" -> {
+                                CasualtyQueueScreen()
+                            }
+                            "Pair New Suit" -> {
+                                PairNewSuitScreen()
+                            }
+                            "Medical Records" -> {
+                                MedicalRecordsScreen()
+                            }
                             else -> {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text("Coming soon", color = Color(0xFF6B7F99))
@@ -321,9 +364,10 @@ fun TopBar(onEditOperator: () -> Unit) {
 
     var time by remember { mutableStateOf("") }
 
-    val criticalCount by AppState.criticalCount
-    val alertCount    by AppState.alertCount
-    val operatorName  by AppState.operatorName
+    val criticalCount    by AppState.criticalCount
+    val alertCount       by AppState.alertCount
+    val operatorName     by AppState.operatorName
+    val connectionStatus by AppState.connectionStatus
 
     // Live clock
     LaunchedEffect(Unit) {
@@ -377,7 +421,12 @@ fun TopBar(onEditOperator: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
 
-            // LIVE badge
+            // Connection badge — reflects real WebSocket state
+            val connColor = when (connectionStatus) {
+                "LIVE"       -> Color(0xFF00E676)
+                "CONNECTING" -> Color(0xFFFFD600)
+                else         -> Color(0xFFFF1744)
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -385,11 +434,11 @@ fun TopBar(onEditOperator: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(Color(0xFF00E676), CircleShape)
+                        .background(connColor, CircleShape)
                 )
                 Text(
-                    text = "LIVE",
-                    color = Color(0xFF00E676),
+                    text = connectionStatus,
+                    color = connColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -582,8 +631,8 @@ fun BattlefieldMap(onWebViewReady: (WebView) -> Unit) {
 fun StatusSummaryBar() {
     val items = listOf(
         StatusSummaryItem("ACTIVE",   7, Color(0xFF00C2FF), Icons.Default.Group),
-        StatusSummaryItem("STABLE",   4, Color(0xFF00FF88), Icons.Default.TrendingUp),
-        StatusSummaryItem("SERIOUS",  2, Color(0xFFFFC533), Icons.Default.ShowChart),
+        StatusSummaryItem("STABLE",   4, Color(0xFF00FF88), Icons.AutoMirrored.Filled.TrendingUp),
+        StatusSummaryItem("SERIOUS",  2, Color(0xFFFFC533), Icons.AutoMirrored.Filled.ShowChart),
         StatusSummaryItem("CRITICAL", 1, Color(0xFFFF445A), Icons.Default.Favorite),
         StatusSummaryItem("OFFLINE",  1, Color(0xFF6B7F99), Icons.Default.WifiOff),
     )
