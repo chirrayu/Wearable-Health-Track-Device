@@ -65,6 +65,16 @@ class VitalsModel(Base):
     battery     = Column(Integer, nullable=True)
     recorded_at = Column(DateTime, default=datetime.utcnow)
 
+    # ⚠ NEW — required by vitals.py's ingest endpoint and triage.py's
+    # calculate_score(). Without these, vitals.py raises a TypeError the
+    # moment a request with the new fields comes in.
+    activity_index   = Column(Integer, nullable=True)   # 0-3, from firmware's accelerometer sampling
+    respiratory_rate  = Column(Integer, nullable=True)   # breaths/min — no sensor yet, always None for now
+    blast_severity    = Column(Float, nullable=True)     # 0.0-0.5, set by blast.compute_blast_severity()
+    blast_timestamp   = Column(DateTime, nullable=True)  # when a blast-magnitude spike was detected
+    score             = Column(Float, nullable=True)     # TA-CSS score set by triage.calculate_score()
+    classification    = Column(String, nullable=True)    # "Stable" / "Serious" / "Critical"
+
     soldier = relationship("SoldierModel", back_populates="vitals")
 
 

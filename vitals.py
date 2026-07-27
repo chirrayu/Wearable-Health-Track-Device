@@ -1,5 +1,6 @@
-#Receives live sensor data from suits (HR, SpO2, temp, accelerometer), 
+#Receives live sensor data from suits (HR, SpO2, temp, accelerometer),
 # validates it, stores it, and returns the latest readings per soldier.
+from datetime import datetime
 from alerts import evaluate_and_create_alerts
 from websocket import push_vitals_update
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +8,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
 
 from database import get_db, VitalsModel, SoldierModel
 from auth import get_current_admin
@@ -16,6 +16,11 @@ from config import (
     SPO2_CRITICAL_THRESHOLD,
     TEMP_CRITICAL_THRESHOLD
 )
+# ⚠ NEW — these were never imported or called anywhere in the original
+# file, which is why no score was ever computed regardless of what data
+# came in.
+from triage import calculate_score
+from blast import compute_blast_severity
 
 router = APIRouter()
 
@@ -27,6 +32,13 @@ class VitalsIn(BaseModel):
     spo2: Optional[int] = None
     temp: Optional[float] = None
     battery: Optional[int] = None
+    # ⚠ NEW — the firmware already sends these, but this schema had no
+    # fields for them, so Pydantic silently dropped them on every request.
+    activity_index: Optional[int] = None
+    respiratory_rate: Optional[int] = None
+    peak_accel_g: Optional[float] = None
+    duration_ms: Optional[float] = None
+    blast_timestamp: Optional[datetime] = None  # firmware sends ISO 8601 "...Z"; pydantic parses this automatically
 
 class VitalsOut(BaseModel):
     id: int
@@ -38,6 +50,9 @@ class VitalsOut(BaseModel):
     recorded_at: datetime
     hr_zone: str
     status_flags: List[str]
+    # ⚠ NEW — surfaces the TA-CSS result computed during ingest
+    score: Optional[float] = None
+    classification: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -76,15 +91,16 @@ def vitals_to_out(v: VitalsModel) -> VitalsOut:
         battery=v.battery,
         recorded_at=v.recorded_at,
         hr_zone=get_hr_zone(v.hr),
-        status_flags=get_status_flags(v.hr, v.spo2, v.temp, v.battery)
+        status_flags=get_status_flags(v.hr, v.spo2, v.temp, v.battery),
+        # ⚠ NEW — these attributes must exist on VitalsModel; see note below.
+        score=getattr(v, "score", None),
+        classification=getattr(v, "classification", None),
     )
 
 
 # ── Routes ────────────────────────────────────────────────────────
 
 # POST /vitals — receive vitals from a suit
-# This is the endpoint the suit hardware (or your simulation) will
-# call every few seconds to push new readings.
 @router.post("/", response_model=VitalsOut)
 async def receive_vitals(
     body: VitalsIn,
@@ -103,11 +119,27 @@ async def receive_vitals(
         hr=body.hr,
         spo2=body.spo2,
         temp=body.temp,
-        battery=body.battery
+        battery=body.battery,
+        # ⚠ NEW — see the schema note at the bottom of this file: these
+        # columns must exist on VitalsModel in database.py or this line
+        # will raise a TypeError.
+        activity_index=body.activity_index,
+        respiratory_rate=body.respiratory_rate,
+        blast_timestamp=body.blast_timestamp,
     )
     db.add(vitals)
 
-    # Auto-update soldier status based on vitals
+    # ⚠ NEW — turn the raw accelerometer spike the firmware measured into
+    # the continuous blast_severity (0-0.5) that blast.py's multiplier
+    # reads directly off the row. Without this, B always defaulted to 1.0
+    # no matter what the suit reported.
+    if body.peak_accel_g is not None and body.duration_ms is not None:
+        vitals.blast_severity = compute_blast_severity(
+            body.peak_accel_g, body.duration_ms
+        )
+
+    # Auto-update soldier status based on vitals (unchanged — this is the
+    # separate threshold-based system, distinct from the TA-CSS score)
     flags = get_status_flags(body.hr, body.spo2, body.temp, body.battery)
     if any("FAST_HR" in f or "LOW_SPO2" in f or "HIGH_TEMP" in f for f in flags):
         soldier.status = "critical"
@@ -120,6 +152,17 @@ async def receive_vitals(
 
     db.commit()
     db.refresh(vitals)
+
+    # ⚠ NEW — this is the actual missing link. Nothing previously called
+    # calculate_score(), so no TA-CSS score/classification was ever
+    # produced, regardless of how complete the incoming data was.
+    # calculate_score() returns None (and leaves vitals.score/classification
+    # untouched) if activity_index/respiratory_rate are still missing —
+    # see triage.py's own docstring.
+    calculate_score(vitals, db)
+    db.commit()  # persist score/classification that calculate_score() set on the row
+    db.refresh(vitals)
+
     # Run the rules engine and create alerts if thresholds are crossed
     evaluate_and_create_alerts(
         soldier=soldier,
@@ -173,8 +216,6 @@ def get_vitals_history(
 
 
 # GET /vitals/all/latest — latest reading for every soldier at once
-# This is what the Android dashboard will poll (or receive via WebSocket)
-# to update all the status cards and map dots simultaneously.
 @router.get("/all/latest", response_model=List[VitalsOut])
 def get_all_latest_vitals(db: Session = Depends(get_db)):
     soldiers = db.query(SoldierModel).all()
