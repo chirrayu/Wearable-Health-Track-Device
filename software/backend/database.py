@@ -65,18 +65,15 @@ class VitalsModel(Base):
     battery     = Column(Integer, nullable=True)
     recorded_at = Column(DateTime, default=datetime.utcnow)
 
-    # ── TA-CSS inputs (added to support triage.py scoring) ─────────
-    activity_index   = Column(Integer, nullable=True)   # 0-3, from suit accelerometer
-    respiratory_rate = Column(Integer, nullable=True)    # breaths/min
-
-    # Blast context: either the suit sends a pre-computed severity (0-0.5),
-    # or raw peak-g / duration and the server computes it (see blast.py).
-    blast_severity  = Column(Float, nullable=True)       # 0.0-0.5, normalized
-    blast_timestamp = Column(DateTime, nullable=True)    # when the blast was detected
-
-    # ── TA-CSS outputs, written by triage.calculate_score() ────────
-    score          = Column(Float, nullable=True)
-    classification = Column(String, nullable=True)       # "Stable" | "Serious" | "Critical"
+    # ⚠ NEW — required by vitals.py's ingest endpoint and triage.py's
+    # calculate_score(). Without these, vitals.py raises a TypeError the
+    # moment a request with the new fields comes in.
+    activity_index   = Column(Integer, nullable=True)   # 0-3, from firmware's accelerometer sampling
+    respiratory_rate  = Column(Integer, nullable=True)   # breaths/min — no sensor yet, always None for now
+    blast_severity    = Column(Float, nullable=True)     # 0.0-0.5, set by blast.compute_blast_severity()
+    blast_timestamp   = Column(DateTime, nullable=True)  # when a blast-magnitude spike was detected
+    score             = Column(Float, nullable=True)     # TA-CSS score set by triage.calculate_score()
+    classification    = Column(String, nullable=True)    # "Stable" / "Serious" / "Critical"
 
     soldier = relationship("SoldierModel", back_populates="vitals")
 
@@ -124,19 +121,6 @@ class SuitConfigModel(Base):
     updated_at          = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     soldier = relationship("SoldierModel", back_populates="suit_config")
-
-
-class AdminCredential(Base):
-    """
-    Persistent store for the admin password hash, so that
-    POST /auth/change-password can actually take effect.
-    Single-row table (id is always "admin") — there is one admin account.
-    """
-    __tablename__ = "admin_credentials"
-
-    id            = Column(String, primary_key=True, default="admin")
-    password_hash = Column(String, nullable=False)
-    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # ── DB init helper ────────────────────────────────────────────────

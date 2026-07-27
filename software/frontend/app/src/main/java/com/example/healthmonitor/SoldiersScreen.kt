@@ -43,6 +43,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 // ── Colors ────────────────────────────────────────────────────────
 private val bgDark      = Color(0xFF07111F)

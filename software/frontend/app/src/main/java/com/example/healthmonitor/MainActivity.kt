@@ -262,6 +262,10 @@ fun Dashboard(onWebViewReady: (WebView) -> Unit) {
                             LiveMapScreen()
                         }
 
+                        "AI Analytics" -> {
+                            AIAnalyticsScreen()
+                        }
+
                         else -> {
                             Text("Coming soon", color = Color(0xFF6B7F99))
                         }
