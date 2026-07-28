@@ -62,8 +62,11 @@ def alert_to_out(alert: AlertModel) -> AlertOut:
 
 # ── Core rules engine ─────────────────────────────────────────────
 # Called internally after every vitals POST.
+# prev_status: the soldier's status *before* this reading updated it.
+#   Rules 6 & 7 only fire when the status just transitioned — not on
+#   every subsequent reading while the status stays offline/critical.
 # Returns list of alerts that were created.
-async def evaluate_and_create_alerts(soldier, hr, spo2, temp, battery, db):
+async def evaluate_and_create_alerts(soldier, hr, spo2, temp, battery, db, prev_status: str = ""):
     created = []
     name = f"{soldier.rank_title} {soldier.name}"
     serial = soldier.serial
@@ -141,7 +144,10 @@ async def evaluate_and_create_alerts(soldier, hr, spo2, temp, battery, db):
         )
 
     # ── Rule 6: Soldier offline / no movement ─────────────────────
-    if soldier.status == "offline":
+    # Gate on status transition: only alert when the soldier just went
+    # offline, not on every vitals POST while they stay offline.
+    status_just_changed = prev_status != soldier.status
+    if soldier.status == "offline" and status_just_changed:
         make_alert(
             title="No Movement Detected",
             severity="warning",
@@ -151,7 +157,8 @@ async def evaluate_and_create_alerts(soldier, hr, spo2, temp, battery, db):
         )
 
     # ── Rule 7: Soldier went critical ─────────────────────────────
-    if soldier.status == "critical":
+    # Same gate: alert once on transition, not on every subsequent reading.
+    if soldier.status == "critical" and status_just_changed:
         make_alert(
             title="Soldier Status Critical",
             severity="critical",

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="leaflet.css" />
+    <script src="leaflet.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            background: rgba(7, 17, 31, 0.85);
+            border: 1px solid #1a3a5c;
+            border-radius: 8px;
+            padding: 8px 14px;
+            z-index: 1000;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: white;
+            font-size: 13px;
+            font-family: sans-serif;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .live-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            font-family: sans-serif;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 4px;
+            z-index: 1000;
+            letter-spacing: 1px;
+        }
+
+        .map-title {
+            position: absolute;
+            top: 12px;
+            left: 14px;
+            color: white;
+            font-family: sans-serif;
+            font-size: 15px;
+            font-weight: bold;
+            z-index: 1000;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="map-title">BATTLEFIELD MAP</div>
+<div class="live-badge">LIVE</div>
+
+<div class="legend">
+    <div class="legend-item">
+        <div class="legend-dot" style="background:#00e676;"></div> Stable
+    </div>
+    <div class="legend-item">
+        <div class="legend-dot" style="background:#ffd600;"></div> Serious
+    </div>
+    <div class="legend-item">
+        <div class="legend-dot" style="background:#ff1744;"></div> Critical
+    </div>
+    <div class="legend-item">
+        <div class="legend-dot" style="background:#757575;"></div> Offline
+    </div>
+</div>
+
+<script>
+
+    window.onload = function () {
+
+    window.map = L.map('map', {
+    center: [28.6139, 77.2090],
+    zoom: 13,
+    zoomControl: true
+    });
+
+    L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+    attribution:'© OpenStreetMap',
+    maxZoom:19
+    }).addTo(window.map)
+
+
+
+    function createDotIcon(status){
+
+    var colors={
+
+    stable:'#00e676',
+
+    serious:'#ffd600',
+
+    critical:'#ff1744',
+
+    offline:'#757575'
+
+    };
+
+    var color=colors[status]||'#ffffff';
+
+    return L.divIcon({
+
+    className:'',
+
+    html:
+
+    '<div style="' +
+
+    'width:18px;' +
+
+    'height:18px;' +
+
+    'border-radius:50%;' +
+
+    'background:'+color+';' +
+
+    'border:2px solid rgba(255,255,255,0.3);' +
+
+    'box-shadow:0 0 10px '+color+';' +
+
+    '"></div>',
+
+    iconSize:[18,18],
+
+    iconAnchor:[9,9]
+
+    });
+
+    }
+
+
+
+    var people=[
+
+    {id:'P1',name:'Soldier Alpha',status:'stable',lat:28.6200,lng:77.2100},
+
+    {id:'P2',name:'Soldier Bravo',status:'stable',lat:28.6150,lng:77.2200},
+
+    {id:'P3',name:'Soldier Charlie',status:'stable',lat:28.6180,lng:77.2000},
+
+    {id:'P4',name:'Soldier Delta',status:'serious',lat:28.6100,lng:77.2300},
+
+    {id:'P5',name:'Soldier Echo',status:'serious',lat:28.6050,lng:77.2150},
+
+    {id:'P6',name:'Soldier Foxtrot',status:'critical',lat:28.6120,lng:77.2250},
+
+    {id:'P7',name:'Soldier Golf',status:'offline',lat:28.6080,lng:77.1950},
+
+    {id:'P8',name:'Soldier Hotel',status:'stable',lat:28.6220,lng:77.2350}
+
+    ];
+
+
+
+    var markers={};
+
+    people.forEach(function(person){
+
+    var marker=L.marker(
+
+    [person.lat,person.lng],
+
+    {
+
+    icon:createDotIcon(person.status),
+
+    draggable:true
+
+    }
+
+    ).addTo(map);
+
+
+
+    marker.bindPopup(
+
+    "<b>"+person.name+"</b><br>"+
+
+    person.status.toUpperCase()
+
+    );
+
+
+
+    markers[person.id]=marker;
+
+    });
+
+
+
+    window.updatePosition=function(id,lat,lng){
+
+    if(markers[id]){
+
+    markers[id].setLatLng([lat,lng]);
+
+    }
+
+    }
+
+
+
+    window.updateStatus=function(id,status){
+
+    if(markers[id]){
+
+    markers[id].setIcon(
+
+    createDotIcon(status)
+
+    );
+
+    }
+
+    }
+
+
+
+    setTimeout(function(){
+
+    map.invalidateSize();
+
+    },500);
+
+    };
+
+</script>
+</body>
+</html>

@@ -2,8 +2,16 @@
 
 from dotenv import load_dotenv
 import os
+import json
+import tempfile
 
-load_dotenv()
+# Load .env or photo.env (whichever exists)
+if os.path.exists(".env"):
+    load_dotenv(".env")
+elif os.path.exists("photo.env"):
+    load_dotenv("photo.env")
+else:
+    load_dotenv()  # still picks up actual env vars on Render
 
 # ── Database ──────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./triage_ai.db")
@@ -18,10 +26,22 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "triage2024")
 
 # ── Firebase (for push notifications) ────────────────────────────
-FIREBASE_CREDENTIALS_PATH = os.getenv(
-    "FIREBASE_CREDENTIALS_PATH",
-    "firebase_credentials.json"
-)
+# On Render you can't upload files, so pass the entire service-account
+# JSON as the FIREBASE_CREDENTIALS_JSON env var.
+_firebase_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
+if _firebase_json_str:
+    # Write the JSON string to a temp file so firebase-admin can load it
+    _tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False
+    )
+    _tmp.write(_firebase_json_str)
+    _tmp.close()
+    FIREBASE_CREDENTIALS_PATH = _tmp.name
+else:
+    FIREBASE_CREDENTIALS_PATH = os.getenv(
+        "FIREBASE_CREDENTIALS_PATH",
+        "firebase_credentials.json"
+    )
 
 # ── Alert thresholds (match your Android rules engine) ───────────
 HR_CRITICAL_THRESHOLD    = int(os.getenv("HR_CRITICAL_THRESHOLD", "130"))
@@ -32,6 +52,9 @@ NO_MOVEMENT_MINUTES      = int(os.getenv("NO_MOVEMENT_MINUTES", "30"))
 # ── Server ────────────────────────────────────────────────────────
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
+
+# ── Render (for self-ping uptime bot) ────────────────────────────
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # auto-set by Render
 # ── AWS S3 ────────────────────────────────────────────────────────
 AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
