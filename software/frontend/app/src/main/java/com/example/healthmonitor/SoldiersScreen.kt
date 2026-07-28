@@ -43,18 +43,19 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
 
 // ── Colors ────────────────────────────────────────────────────────
-private val bgDark      = Color(0xFF07111F)
-private val cardDark    = Color(0xFF081B33)
-private val borderDark  = Color(0xFF1A3A5C)
-private val textMuted   = Color(0xFF6B7F99)
-private val accentBlue  = Color(0xFF00C2FF)
-private val statusGreen = Color(0xFF00E676)
-private val statusYellow= Color(0xFFFFD600)
-private val statusRed   = Color(0xFFFF1744)
-private val statusGray  = Color(0xFF757575)
+// Not private: reused across screens (e.g. ConfigureSuitScreen) to keep a
+// single consistent tactical color palette for the whole app.
+val bgDark      = Color(0xFF07111F)
+val cardDark    = Color(0xFF081B33)
+val borderDark  = Color(0xFF1A3A5C)
+val textMuted   = Color(0xFF6B7F99)
+val accentBlue  = Color(0xFF00C2FF)
+val statusGreen = Color(0xFF00E676)
+val statusYellow= Color(0xFFFFD600)
+val statusRed   = Color(0xFFFF1744)
+val statusGray  = Color(0xFF757575)
 
 fun statusColor(status: String): Color = when (status) {
     "stable"   -> statusGreen
@@ -80,9 +81,7 @@ fun SoldiersScreen() {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSoldier by remember { mutableStateOf<Soldier?>(null) }
     var deletingSoldier by remember { mutableStateOf<Soldier?>(null) }
-    var apiError by remember { mutableStateOf<String?>(null) }
 
-    val scope = rememberCoroutineScope()
     val selectedSquad by SquadState.selectedSquad
 
     val visibleSoldiers = SoldierState.soldiers
@@ -95,33 +94,12 @@ fun SoldiersScreen() {
         }
         .sortedBy { it.rankOrder }
 
-    // Show transient API error banner
-    apiError?.let { msg ->
-        LaunchedEffect(msg) {
-            kotlinx.coroutines.delay(3000)
-            apiError = null
-        }
-    }
-
     if (showAddDialog) {
         SoldierEditDialog(
             existing = null,
             onDismiss = { showAddDialog = false },
             onSave = { soldier ->
-                scope.launch {
-                    // Find the squad ID for the selected squad name
-                    val squads = ApiService.getSquads()
-                    val squadId = squads.firstOrNull { it.second == soldier.squad }?.first ?: ""
-                    val ok = ApiService.createSoldier(soldier, squadId)
-                    if (ok) {
-                        // Re-fetch to get the real server-assigned UUID
-                        val updated = ApiService.getSoldiers()
-                        SoldierState.soldiers.clear()
-                        SoldierState.soldiers.addAll(updated)
-                    } else {
-                        apiError = "Failed to create soldier — check server connection"
-                    }
-                }
+                SoldierState.addSoldier(soldier)
                 showAddDialog = false
             }
         )
@@ -132,14 +110,7 @@ fun SoldiersScreen() {
             existing = soldier,
             onDismiss = { editingSoldier = null },
             onSave = { updated ->
-                scope.launch {
-                    val ok = ApiService.updateSoldier(updated)
-                    if (ok) {
-                        SoldierState.updateSoldier(updated)
-                    } else {
-                        apiError = "Failed to update soldier — check server connection"
-                    }
-                }
+                SoldierState.updateSoldier(updated)
                 editingSoldier = null
             }
         )
@@ -158,14 +129,7 @@ fun SoldiersScreen() {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch {
-                        val ok = ApiService.deleteSoldier(soldier.id)
-                        if (ok) {
-                            SoldierState.removeSoldier(soldier.id)
-                        } else {
-                            apiError = "Failed to delete soldier — check server connection"
-                        }
-                    }
+                    SoldierState.removeSoldier(soldier.id)
                     deletingSoldier = null
                 }) {
                     Text("Remove", color = statusRed, fontWeight = FontWeight.Bold)
@@ -179,26 +143,13 @@ fun SoldiersScreen() {
         )
     }
 
-    // API error banner
-    apiError?.let { msg ->
-        Box(
-            modifier = androidx.compose.ui.Modifier
-                .fillMaxWidth()
-                .background(statusRed.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                .border(1.dp, statusRed.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        ) {
-            Text(msg, color = statusRed, fontSize = 12.sp)
-        }
-    }
-
     Row(
         modifier = Modifier
             .fillMaxSize()
             .background(bgDark)
     ) {
 
-        SquadSidebar(apiError = apiError, onApiError = { apiError = it })
+        SquadSidebar()
 
         Column(
             modifier = Modifier
@@ -256,14 +207,11 @@ fun SoldiersScreen() {
 
 // ── Squad Sidebar ─────────────────────────────────────────────────
 @Composable
-fun SquadSidebar(
-    apiError: String? = null,
-    onApiError: (String?) -> Unit = {}
-) {
+fun SquadSidebar() {
+
     var showAddSquad by remember { mutableStateOf(false) }
     var newSquadName by remember { mutableStateOf("") }
     val selectedSquad by SquadState.selectedSquad
-    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -320,15 +268,7 @@ fun SquadSidebar(
                         .background(accentBlue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                         .clickable {
                             if (newSquadName.isNotBlank()) {
-                                val name = newSquadName.trim()
-                                scope.launch {
-                                    val newId = ApiService.createSquad(name)
-                                    if (newId != null) {
-                                        SquadState.squads.add(name)
-                                    } else {
-                                        onApiError("Failed to create squad — check server connection")
-                                    }
-                                }
+                                SquadState.squads.add(newSquadName.trim())
                                 newSquadName = ""
                                 showAddSquad = false
                             }
@@ -497,7 +437,24 @@ fun SoldierTable(
             TableHeaderText("TEMP", Modifier.weight(0.9f))
             TableHeaderText("BATTERY/RISK", Modifier.weight(1.6f))
             TableHeaderText("STATUS", Modifier.weight(1.1f))
-            TableHeaderText("BLOOD", Modifier.weight(0.7f))
+            TableHeaderText("BLOOD", Modifier.weight(0.7f))   // ← ADD THIS
+            Spacer(Modifier.width(60.dp))
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TableHeaderText("#", Modifier.width(28.dp))
+            TableHeaderText("SOLDIER", Modifier.weight(2.2f))
+            TableHeaderText("SQUAD", Modifier.weight(1f))
+            TableHeaderText("ROLE", Modifier.weight(1.3f))
+            TableHeaderText("HR", Modifier.weight(0.9f))
+            TableHeaderText("SPO2", Modifier.weight(0.9f))
+            TableHeaderText("TEMP", Modifier.weight(0.9f))
+            TableHeaderText("BATTERY/RISK", Modifier.weight(1.6f))
+            TableHeaderText("STATUS", Modifier.weight(1.1f))
             Spacer(Modifier.width(60.dp))
         }
 
@@ -870,6 +827,8 @@ fun SoldierEditDialog(
 
             Spacer(Modifier.height(10.dp))
             DialogField("Role (e.g. Rifleman)", role) { role = it }
+            Spacer(Modifier.height(10.dp))
+            DialogField("Role (e.g. Rifleman)", role) { role = it }
 
             Spacer(Modifier.height(10.dp))                          // ← ADD THIS BLOCK
             Text("Blood Group", color = textMuted, fontSize = 12.sp)
@@ -952,15 +911,12 @@ fun SoldierEditDialog(
                                     serial = serial.trim(),
                                     squad = squad,
                                     role = role.trim(),
-                                    // Preserve existing vitals for edits; new soldiers start with
-                                    // null vitals so no false alerts fire before the suit connects.
-                                    hr = existing?.hr,
-                                    spo2 = existing?.spo2,
-                                    temp = existing?.temp,
-                                    battery = existing?.battery ?: 0,
+                                    hr = existing?.hr ?: 75,
+                                    spo2 = existing?.spo2 ?: 98,
+                                    temp = existing?.temp ?: 98.2f,
+                                    battery = existing?.battery ?: 100,
                                     status = existing?.status ?: "stable",
-                                    photoUri = photoUri,
-                                    bloodGroup = bloodGroup
+                                    photoUri = photoUri
                                 )
                                 onSave(soldier)
                             }
