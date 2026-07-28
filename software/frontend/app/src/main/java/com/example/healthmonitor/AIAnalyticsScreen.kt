@@ -1,6 +1,5 @@
 package com.example.healthmonitor
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -12,12 +11,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingFlat
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -27,7 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,9 +36,15 @@ import java.util.Locale
 // ── Color palette (matches the rest of the app) ──────────────────
 private val bgDark       = Color(0xFF07111F)
 private val cardDark     = Color(0xFF081B33)
-private val cardDarker   = Color(0xFF06152A)
 private val borderDark   = Color(0xFF1A3A5C)
 private val textMuted    = Color(0xFF6B7F99)
+private val accentBlue   = Color(0xFF00C2FF)
+private val statusGreen  = Color(0xFF00E676)
+private val statusYellow = Color(0xFFFFD600)
+private val statusRed    = Color(0xFFFF1744)
+private val statusGray   = Color(0xFF757575)
+
+private val cardDarker   = Color(0xFF06152A)
 private val accentCyan   = Color(0xFF00C2FF)
 private val accentGreen  = Color(0xFF00FF88)
 private val critRed      = Color(0xFFFF445A)
@@ -46,6 +52,9 @@ private val warnYellow   = Color(0xFFFFC533)
 private val seriousAmber = Color(0xFFFF9800)
 private val purpleAccent = Color(0xFF9C6AFF)
 private val tealAccent   = Color(0xFF00E5CC)
+private val highRiskOrange = Color(0xFFFF6B35)
+private val cardGradientEnd = Color(0xFF0A1E3D)
+private val bgDarker       = Color(0xFF040E1C)
 
 
 // ── Data class for per-soldier AI assessment ─────────────────────
@@ -87,7 +96,7 @@ fun AIAnalyticsScreen() {
     }
     val threatColor = when (threatLevel) {
         "SEVERE"   -> critRed
-        "HIGH"     -> Color(0xFFFF6B35)
+        "HIGH"     -> highRiskOrange
         "ELEVATED" -> warnYellow
         "MODERATE" -> accentCyan
         else       -> accentGreen
@@ -203,7 +212,7 @@ private fun AIHeader(
                     Brush.horizontalGradient(
                         listOf(
                             cardDark,
-                            Color(0xFF0A1E3D),
+                            cardGradientEnd,
                             cardDark
                         )
                     ),
@@ -296,7 +305,7 @@ private fun AIHeader(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            Color(0xFF040E1C),
+                            bgDarker,
                             RoundedCornerShape(8.dp)
                         )
                         .padding(12.dp),
@@ -387,7 +396,7 @@ private fun SeverityDistributionPanel(
 
             SeverityBar("CRITICAL", critical, safeTotal, critRed, Icons.Default.Warning)
             Spacer(Modifier.height(10.dp))
-            SeverityBar("SERIOUS", serious, safeTotal, seriousAmber, Icons.Default.TrendingDown)
+            SeverityBar("SERIOUS", serious, safeTotal, seriousAmber, Icons.AutoMirrored.Filled.TrendingDown)
             Spacer(Modifier.height(10.dp))
             SeverityBar("STABLE", stable, safeTotal, accentGreen, Icons.Default.CheckCircle)
             Spacer(Modifier.height(10.dp))
@@ -444,7 +453,7 @@ private fun SeverityBar(
         }
         Spacer(Modifier.width(10.dp))
         Text(
-            "$count",
+            text = "$count",
             color = color,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
@@ -452,7 +461,7 @@ private fun SeverityBar(
             textAlign = TextAlign.End
         )
         Text(
-            " (${if (total > 0) (count * 100 / total) else 0}%)",
+            text = " (${if (total > 0) (count * 100 / total) else 0}%)",
             color = textMuted,
             fontSize = 11.sp,
             modifier = Modifier.width(46.dp)
@@ -505,7 +514,7 @@ private fun SquadReadinessMatrix(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF040E1C), RoundedCornerShape(6.dp))
+                    .background(bgDarker, RoundedCornerShape(6.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Text("SQUAD", color = textMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold,
@@ -773,9 +782,9 @@ private fun SoldierAICard(
         else       -> accentGreen
     }
     val trendIcon = when (assessment.trendDirection) {
-        "improving" -> Icons.Default.TrendingUp
-        "declining" -> Icons.Default.TrendingDown
-        else        -> Icons.Default.TrendingFlat
+        "improving" -> Icons.AutoMirrored.Filled.TrendingUp
+        "declining" -> Icons.AutoMirrored.Filled.TrendingDown
+        else        -> Icons.AutoMirrored.Filled.TrendingFlat
     }
     val trendColor = when (assessment.trendDirection) {
         "improving" -> accentGreen
@@ -889,7 +898,7 @@ private fun SoldierAICard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    VitalChip("HR", soldier.hr?.let { "${it} bpm" } ?: "N/A",
+                    VitalChip("HR", soldier.hr?.let { "$it bpm" } ?: "N/A",
                         when {
                             soldier.hr == null        -> textMuted
                             soldier.hr!! > 130        -> critRed
@@ -897,7 +906,7 @@ private fun SoldierAICard(
                             else                      -> accentGreen
                         }
                     )
-                    VitalChip("SpO2", soldier.spo2?.let { "${it}%" } ?: "N/A",
+                    VitalChip("SpO2", soldier.spo2?.let { "$it%" } ?: "N/A",
                         when {
                             soldier.spo2 == null       -> textMuted
                             soldier.spo2!! < 90        -> critRed
@@ -1016,7 +1025,7 @@ private fun VitalChip(label: String, value: String, color: Color) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .background(Color(0xFF040E1C), RoundedCornerShape(8.dp))
+            .background(bgDarker, RoundedCornerShape(8.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Text(label, color = textMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -1077,39 +1086,43 @@ private fun buildAssessment(soldier: Soldier): SoldierAssessment {
     // We scale partial → full range proportionally.
     val severityScore = partialWeighted * (12.6f / 6.3f)
 
-    val classification = when {
-        soldier.status == "offline" -> "Stable"   // can't score offline
-        severityScore > 13.5f      -> "Critical"
-        severityScore > 6.5f       -> "Serious"
-        else                       -> "Stable"
+    val classification = when (soldier.status) {
+        "offline" -> "Stable"   // can't score offline
+        else -> when {
+            severityScore > 13.5f -> "Critical"
+            severityScore > 6.5f  -> "Serious"
+            else                  -> "Stable"
+        }
     }
 
     // Override from actual soldier status if they're already marked critical
-    val finalClassification = when {
-        soldier.status == "critical" && classification != "Critical" -> "Critical"
-        soldier.status == "serious" && classification == "Stable"    -> "Serious"
-        else -> classification
+    val finalClassification = when (soldier.status) {
+        "critical" -> if (classification != "Critical") "Critical" else classification
+        "serious"  -> if (classification == "Stable") "Serious" else classification
+        else       -> classification
     }
 
-    val finalScore = when {
-        soldier.status == "critical" && severityScore < 13.6f -> 14f + (soldier.hr?.let { it - 130f } ?: 0f).coerceIn(0f, 6f)
-        soldier.status == "serious" && severityScore < 6.6f   -> 7f + (spo2Sub * 1.5f)
-        else -> severityScore
+    val finalScore = when (soldier.status) {
+        "critical" -> if (severityScore < 13.6f) 14f + (soldier.hr?.let { it - 130f } ?: 0f).coerceIn(0f, 6f) else severityScore
+        "serious"  -> if (severityScore < 6.6f) 7f + (spo2Sub * 1.5f) else severityScore
+        else       -> severityScore
     }
 
     // Trend direction (heuristic based on current state)
-    val trend = when {
-        soldier.status == "offline"                         -> "stable"
-        soldier.hr != null && soldier.hr!! > 140            -> "declining"
-        soldier.spo2 != null && soldier.spo2!! < 88         -> "declining"
-        soldier.status == "stable" && riskFactors.isEmpty() -> "improving"
-        else                                                -> "stable"
+    val trend = when (soldier.status) {
+        "offline" -> "stable"
+        "stable"  -> if (riskFactors.isEmpty()) "improving" else "stable"
+        else -> when {
+            soldier.hr != null && soldier.hr!! > 140    -> "declining"
+            soldier.spo2 != null && soldier.spo2!! < 88 -> "declining"
+            else                                        -> "stable"
+        }
     }
 
     // AI recommendation
     val recommendation = when (finalClassification) {
-        "Critical" -> buildCriticalRecommendation(soldier, riskFactors)
-        "Serious"  -> buildSeriousRecommendation(soldier, riskFactors)
+        "Critical" -> buildCriticalRecommendation(riskFactors)
+        "Serious"  -> buildSeriousRecommendation(riskFactors)
         else       -> "Vitals within normal parameters. Continue standard monitoring protocol."
     }
 
@@ -1123,7 +1136,7 @@ private fun buildAssessment(soldier: Soldier): SoldierAssessment {
     )
 }
 
-private fun buildCriticalRecommendation(soldier: Soldier, factors: List<String>): String {
+private fun buildCriticalRecommendation(factors: List<String>): String {
     val parts = mutableListOf<String>()
     parts.add("IMMEDIATE INTERVENTION REQUIRED.")
 
@@ -1142,7 +1155,7 @@ private fun buildCriticalRecommendation(soldier: Soldier, factors: List<String>)
     return parts.joinToString(" ")
 }
 
-private fun buildSeriousRecommendation(soldier: Soldier, factors: List<String>): String {
+private fun buildSeriousRecommendation(factors: List<String>): String {
     val parts = mutableListOf("Monitor closely — condition may deteriorate.")
     if (factors.any { it.startsWith("HR:") }) {
         parts.add("Elevated heart rate requires attention.")

@@ -31,11 +31,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val bgDark      = Color(0xFF07111F)
-private val cardDark    = Color(0xFF081B33)
-private val borderDark  = Color(0xFF1A3A5C)
-private val textMuted   = Color(0xFF6B7F99)
-private val accentBlue  = Color(0xFF00C2FF)
+// ── Colors ────────────────────────────────────────────────────────
+private val bgDark       = Color(0xFF07111F)
+private val cardDark     = Color(0xFF081B33)
+private val borderDark   = Color(0xFF1A3A5C)
+private val textMuted    = Color(0xFF6B7F99)
+private val accentBlue   = Color(0xFF00C2FF)
+private val statusGreen  = Color(0xFF00E676)
+private val statusYellow = Color(0xFFFFD600)
+private val statusRed    = Color(0xFFFF1744)
+private val statusGray   = Color(0xFF757575)
+
+// Reuses shared colors from SoldiersScreen.kt
 private val critRed     = Color(0xFFFF445A)
 private val warnYellow  = Color(0xFFFFC533)
 private val infoBlue    = Color(0xFF00C2FF)

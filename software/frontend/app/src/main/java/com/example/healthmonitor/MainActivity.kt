@@ -66,6 +66,8 @@ import com.google.android.gms.location.*
 
 // ── App State ─────────────────────────────────────────────────────
 object AppState {
+    var isLoggedIn = mutableStateOf(false)
+    var connectionStatus = mutableStateOf("OFFLINE")
     var operatorName  = mutableStateOf("GHOST-6")
     var criticalCount = mutableStateOf(1)
     var alertCount = mutableStateOf(0)
@@ -117,9 +119,18 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            Dashboard(
-                onWebViewReady = { wv -> webViewRef = wv }
-            )
+            if (AppState.isLoggedIn.value) {
+                Dashboard(
+                    onWebViewReady = { wv -> webViewRef = wv }
+                )
+            } else {
+                LoginScreen(
+                    onLoginSuccess = {
+                        AppState.isLoggedIn.value = true
+                        WebSocketManager.connect(this)
+                    }
+                )
+            }
         }
     }
 
@@ -162,6 +173,7 @@ class MainActivity : ComponentActivity() {
     // ── Stop GPS when app closes ─────────────────────────────────
     override fun onDestroy() {
         super.onDestroy()
+        WebSocketManager.disconnect()
         if (::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
@@ -299,6 +311,9 @@ fun Dashboard(
                             "Configure Suit" -> {
                                 ConfigureSuitScreen()
                             }
+                            "AI Analytics" -> {
+                                AIAnalyticsScreen()
+                            }
                             else -> {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text("Coming soon", color = Color(0xFF6B7F99))
@@ -324,6 +339,7 @@ fun TopBar(onEditOperator: () -> Unit) {
 
     var time by remember { mutableStateOf("") }
 
+    val connectionStatus by AppState.connectionStatus
     val criticalCount by AppState.criticalCount
     val alertCount    by AppState.alertCount
     val operatorName  by AppState.operatorName
@@ -380,19 +396,24 @@ fun TopBar(onEditOperator: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
 
-            // LIVE badge
+            // Connection badge
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
+                val statusColor = when (connectionStatus) {
+                    "LIVE"       -> Color(0xFF00E676)
+                    "CONNECTING" -> Color(0xFFFFD600)
+                    else         -> Color(0xFF6B7F99)
+                }
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(Color(0xFF00E676), CircleShape)
+                        .background(statusColor, CircleShape)
                 )
                 Text(
-                    text = "LIVE",
-                    color = Color(0xFF00E676),
+                    text = connectionStatus,
+                    color = statusColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
