@@ -1,0 +1,41 @@
+databases:
+  - name: triage-ai-db
+    databaseName: triage_ai
+    user: triage_user
+    plan: free
+    region: singapore
+
+services:
+  - type: web
+    name: triage-ai-backend
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: software/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: triage-ai-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: "ap-south-1"
+      - key: S3_BUCKET_NAME
+        value: "triage-ai-photos"
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false

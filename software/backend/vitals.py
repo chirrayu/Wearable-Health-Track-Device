@@ -164,7 +164,7 @@ async def receive_vitals(
     db.refresh(vitals)
 
     # Run the rules engine and create alerts if thresholds are crossed
-    evaluate_and_create_alerts(
+    await evaluate_and_create_alerts(
         soldier=soldier,
         hr=body.hr,
         spo2=body.spo2,

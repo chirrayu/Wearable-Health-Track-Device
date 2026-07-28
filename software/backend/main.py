@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import init_db
-from config import HOST, PORT
+from config import HOST, PORT, RENDER_EXTERNAL_URL
 from auth import get_current_admin
 from alerts_notifier import init_firebase, register_device_token, unregister_device_token
 
@@ -15,6 +15,9 @@ from squads import router as squads_router
 from suit_config import router as suit_config_router
 from map_tracking import router as map_router
 from websocket import router as ws_router
+
+import asyncio
+import urllib.request
 
 app = FastAPI(
     title="Triage AI Backend",
@@ -30,11 +33,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Startup: init DB + Firebase once ─────────────────────────────
+
+# ── Self-ping to keep Render free tier alive ─────────────────────
+async def self_ping():
+    """Ping our own health endpoint every 14 minutes to prevent
+    Render free-tier cold starts."""
+    if not RENDER_EXTERNAL_URL:
+        print("RENDER_EXTERNAL_URL not set — self-ping disabled (local dev)")
+        return
+    url = f"{RENDER_EXTERNAL_URL}/"
+    print(f"Self-ping started → {url} every 14 min")
+    while True:
+        await asyncio.sleep(14 * 60)  # 14 minutes
+        try:
+            urllib.request.urlopen(url, timeout=10)
+            print("Self-ping OK")
+        except Exception as e:
+            print(f"Self-ping failed: {e}")
+
+
+# ── Startup: init DB + Firebase + self-ping ──────────────────────
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     init_db()
     init_firebase()
+    asyncio.create_task(self_ping())
     print("Server ready")
 
 

@@ -11,9 +11,10 @@ from datetime import datetime
 from config import DATABASE_URL
 
 # ── Engine + session ──────────────────────────────────────────────
+_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False}  # needed for SQLite only
+    connect_args=_connect_args
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -121,6 +122,14 @@ class SuitConfigModel(Base):
     updated_at          = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     soldier = relationship("SoldierModel", back_populates="suit_config")
+
+
+class AdminCredential(Base):
+    __tablename__ = "admin_credentials"
+
+    id            = Column(String, primary_key=True, default="admin")
+    password_hash = Column(String, nullable=False)
+
 
 
 # ── DB init helper ────────────────────────────────────────────────
