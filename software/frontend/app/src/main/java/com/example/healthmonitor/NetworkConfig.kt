@@ -1,6 +1,6 @@
 package com.example.healthmonitor
 
 object NetworkConfig {
-    const val BASE_URL = "https://triage-ai-backend.onrender.com"
-    const val WS_URL   = "wss://triage-ai-backend.onrender.com/ws/connect?feed=all"
+    const val BASE_URL = "https://triage-ai-backend-v13x.onrender.com"
+    const val WS_URL   = "wss://triage-ai-backend-v13x.onrender.com/ws/connect?feed=all"
 }
