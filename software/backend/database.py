@@ -134,10 +134,26 @@ class AdminCredential(Base):
 
 # ── DB init helper ────────────────────────────────────────────────
 def init_db():
+    from passlib.context import CryptContext
+    from config import ADMIN_PASSWORD
+    
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
+        # Seed admin credential if not exists
+        admin_cred = db.query(AdminCredential).filter(AdminCredential.id == "admin").first()
+        if not admin_cred:
+            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            admin_cred = AdminCredential(
+                id="admin",
+                password_hash=pwd_context.hash(ADMIN_PASSWORD)
+            )
+            db.add(admin_cred)
+            db.commit()
+            print(f"✓ Admin credential seeded with ADMIN_PASSWORD from config")
+        
+        # Seed demo soldier if no soldiers exist yet
         if db.query(SoldierModel).first():
             return
 
