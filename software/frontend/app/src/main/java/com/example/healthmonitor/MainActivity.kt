@@ -196,6 +196,24 @@ fun Dashboard(
             }
         }
     }
+
+    LaunchedEffect(Unit) {
+        if (SoldierState.soldiers.isEmpty()) {
+            val fetchedSoldiers = ApiService.getSoldiers()
+            if (fetchedSoldiers.isNotEmpty()) {
+                SoldierState.soldiers.clear()
+                SoldierState.soldiers.addAll(fetchedSoldiers)
+            }
+        }
+
+        val fetchedSquads = ApiService.getSquads()
+        if (fetchedSquads.isNotEmpty()) {
+            SquadState.setSquads(fetchedSquads)
+        } else if (SquadState.squads.isEmpty()) {
+            SquadState.squads.add("Alpha")
+        }
+    }
+
     val drawerState =
         rememberDrawerState(
             DrawerValue.Closed
@@ -310,6 +328,9 @@ fun Dashboard(
                             }
                             "Configure Suit" -> {
                                 ConfigureSuitScreen()
+                            }
+                            "Pair New Suit" -> {
+                                PairNewSuitScreen()
                             }
                             "AI Analytics" -> {
                                 AIAnalyticsScreen()

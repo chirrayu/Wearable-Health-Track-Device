@@ -179,7 +179,7 @@ class WifiConfigCallback : public BLECharacteristicCallbacks {
 
     pendingBackendPort = doc["backend_port"] | 0;
 
-    const char* soldierId = doc["soldier_id"];
+    const char* soldierId = doc["suit_id"] ? doc["suit_id"].as<const char*>() : (doc["soldier_id"] ? doc["soldier_id"].as<const char*>() : nullptr);
     pendingSoldierId = soldierId ? String(soldierId) : String("");
 
     pendingWifiSwitch = true;
