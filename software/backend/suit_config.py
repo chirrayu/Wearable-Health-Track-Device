@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-from database import get_db, SuitConfigModel, SoldierModel
+from database import get_db, SuitConfigModel, SoldierModel, get_soldier_by_ref
 from auth import get_current_admin
 
 router = APIRouter()
@@ -77,15 +77,19 @@ def get_suit_config(
     soldier_id: str,
     db: Session = Depends(get_db)
 ):
+    soldier = get_soldier_by_ref(db, soldier_id)
+    if not soldier:
+        raise HTTPException(status_code=404, detail="Soldier not found")
+
     config = db.query(SuitConfigModel).filter(
-        SuitConfigModel.soldier_id == soldier_id
+        SuitConfigModel.soldier_id == soldier.id
     ).first()
 
     if not config:
-        raise HTTPException(
-            status_code=404,
-            detail="No suit config found for this soldier"
-        )
+        config = SuitConfigModel(soldier_id=soldier.id)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
 
     return config_to_out(config)
 
@@ -99,14 +103,12 @@ def update_suit_config(
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin)
 ):
-    soldier = db.query(SoldierModel).filter(
-        SoldierModel.id == soldier_id
-    ).first()
+    soldier = get_soldier_by_ref(db, soldier_id)
     if not soldier:
         raise HTTPException(status_code=404, detail="Soldier not found")
 
     config = db.query(SuitConfigModel).filter(
-        SuitConfigModel.soldier_id == soldier_id
+        SuitConfigModel.soldier_id == soldier.id
     ).first()
 
     # Create default config if it doesn't exist yet
@@ -252,20 +254,28 @@ def get_suit_commands(
     soldier_id: str,
     db: Session = Depends(get_db)
 ):
+    soldier = get_soldier_by_ref(db, soldier_id)
+    if not soldier:
+        raise HTTPException(
+            status_code=404,
+            detail="Soldier/suit not found"
+        )
+
     config = db.query(SuitConfigModel).filter(
-        SuitConfigModel.soldier_id == soldier_id
+        SuitConfigModel.soldier_id == soldier.id
     ).first()
 
     if not config:
-        raise HTTPException(
-            status_code=404,
-            detail="No config found"
-        )
+        config = SuitConfigModel(soldier_id=soldier.id)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
 
     # This is what your suit firmware polls to know what to do.
     # Format this however your hardware protocol requires.
     return {
-        "soldier_id": soldier_id,
+        "soldier_id": soldier.id,
+        "suit_id": soldier.suit_id,
         "commands": {
             "sensors": {
                 "hr":            config.hr_sensor,
