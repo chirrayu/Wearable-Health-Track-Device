@@ -141,17 +141,25 @@ def init_db():
 
     db = SessionLocal()
     try:
-        # Seed admin credential if not exists
+        # Always ensure admin credential matches current ADMIN_PASSWORD env var
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        password_hash = pwd_context.hash(ADMIN_PASSWORD)
+        
         admin_cred = db.query(AdminCredential).filter(AdminCredential.id == "admin").first()
-        if not admin_cred:
-            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        if admin_cred:
+            # Update existing credential with current password
+            admin_cred.password_hash = password_hash
+            db.commit()
+            print(f"✓ Admin credential updated with ADMIN_PASSWORD from config")
+        else:
+            # Create new credential
             admin_cred = AdminCredential(
                 id="admin",
-                password_hash=pwd_context.hash(ADMIN_PASSWORD)
+                password_hash=password_hash
             )
             db.add(admin_cred)
             db.commit()
-            print(f"✓ Admin credential seeded with ADMIN_PASSWORD from config")
+            print(f"✓ Admin credential created with ADMIN_PASSWORD from config")
         
         # Seed demo soldier if no soldiers exist yet
         if db.query(SoldierModel).first():
