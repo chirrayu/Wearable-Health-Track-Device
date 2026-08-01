@@ -7,6 +7,6 @@
 
     <!-- Local dev: allow cleartext to emulator localhost -->
     <domain-config cleartextTrafficPermitted="true">
-        <domain>10.0.2.2</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
     </domain-config>
 </network-security-config>

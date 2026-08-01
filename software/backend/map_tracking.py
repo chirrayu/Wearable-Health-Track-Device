@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import uuid
 
-from database import get_db, LocationModel, SoldierModel
+from database import get_db, LocationModel, SoldierModel, get_soldier_by_ref
 from auth import get_current_admin
 
 router = APIRouter()
@@ -80,9 +80,7 @@ async def receive_location(
     body: LocationIn,
     db: Session = Depends(get_db)
 ):
-    soldier = db.query(SoldierModel).filter(
-        SoldierModel.id == body.soldier_id
-    ).first()
+    soldier = get_soldier_by_ref(db, body.soldier_id)
     if not soldier:
         raise HTTPException(status_code=404, detail="Soldier not found")
 

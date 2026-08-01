@@ -136,6 +136,44 @@ class AdminCredential(Base):
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+    db = SessionLocal()
+    try:
+        if db.query(SoldierModel).first():
+            return
+
+        squad = db.query(Squad).filter(Squad.name == "Alpha").first()
+        if not squad:
+            squad = Squad(id="squad-alpha", name="Alpha")
+            db.add(squad)
+            db.flush()
+
+        demo_soldier = SoldierModel(
+            id="soldier-demo-001",
+            name="Demo Soldier",
+            rank_title="Pvt",
+            rank_order=1,
+            serial="SOLDIER-001",
+            squad_id=squad.id,
+            status="stable",
+        )
+        db.add(demo_soldier)
+        db.commit()
+    finally:
+        db.close()
+
+
+def get_soldier_by_ref(db, soldier_ref: str):
+    """Resolve a soldier from either the internal DB id or the public serial number."""
+    if not soldier_ref:
+        return None
+    return (
+        db.query(SoldierModel)
+        .filter(
+            (SoldierModel.id == soldier_ref) | (SoldierModel.serial == soldier_ref.upper())
+        )
+        .first()
+    )
+
 
 # ── Dependency for FastAPI routes ─────────────────────────────────
 def get_db():
