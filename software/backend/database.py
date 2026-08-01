@@ -41,6 +41,7 @@ class SoldierModel(Base):
     rank_title  = Column(String, nullable=False)
     rank_order  = Column(Integer, nullable=False)
     serial      = Column(String, unique=True, nullable=False)
+    suit_id     = Column(String, unique=True, nullable=True)
     squad_id    = Column(String, ForeignKey("squads.id"))
     role        = Column(String)
     blood_group = Column(String, default="O+")
@@ -177,6 +178,7 @@ def init_db():
             rank_title="Pvt",
             rank_order=1,
             serial="SOLDIER-001",
+            suit_id="SUIT-001",
             squad_id=squad.id,
             status="stable",
         )
@@ -187,13 +189,17 @@ def init_db():
 
 
 def get_soldier_by_ref(db, soldier_ref: str):
-    """Resolve a soldier from either the internal DB id or the public serial number."""
+    """Resolve a soldier from either the internal DB id, public serial number, or assigned suit_id."""
     if not soldier_ref:
         return None
+    ref_upper = soldier_ref.upper()
     return (
         db.query(SoldierModel)
         .filter(
-            (SoldierModel.id == soldier_ref) | (SoldierModel.serial == soldier_ref.upper())
+            (SoldierModel.id == soldier_ref)
+            | (SoldierModel.serial == ref_upper)
+            | (SoldierModel.suit_id == soldier_ref)
+            | (SoldierModel.suit_id == ref_upper)
         )
         .first()
     )
