@@ -9,7 +9,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel
 from typing import List, Optional
 
-from database import get_db, VitalsModel, SoldierModel
+from database import get_db, VitalsModel, SoldierModel, get_soldier_by_ref
 from auth import get_current_admin
 from config import (
     HR_CRITICAL_THRESHOLD,
@@ -107,9 +107,7 @@ async def receive_vitals(
     db: Session = Depends(get_db)
 ):
     # Confirm soldier exists
-    soldier = db.query(SoldierModel).filter(
-        SoldierModel.id == body.soldier_id
-    ).first()
+    soldier = get_soldier_by_ref(db, body.soldier_id)
     if not soldier:
         raise HTTPException(status_code=404, detail="Soldier not found")
 

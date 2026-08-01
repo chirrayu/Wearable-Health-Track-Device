@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import json
 import tempfile
+from urllib.parse import urlparse, urlunparse
 
 # Load .env or photo.env (whichever exists)
 if os.path.exists(".env"):
@@ -14,7 +15,21 @@ else:
     load_dotenv()  # still picks up actual env vars on Render
 
 # ── Database ──────────────────────────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./triage_ai.db")
+def normalize_database_url(raw_url: str | None) -> str:
+    if not raw_url:
+        return "sqlite:///./triage_ai.db"
+
+    if raw_url.startswith("postgres://"):
+        parsed = urlparse(raw_url)
+        return urlunparse(parsed._replace(scheme="postgresql+psycopg2"))
+
+    if raw_url.startswith("postgresql://"):
+        return raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+    return raw_url
+
+
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./triage_ai.db"))
 
 # ── JWT Auth ──────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "change-this-in-production")
