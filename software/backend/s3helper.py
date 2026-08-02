@@ -8,7 +8,7 @@ except Exception:  # pragma: no cover - optional dependency for local/dev
     boto3 = None
     ClientError = Exception
 
-from .config import (
+from config import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     AWS_REGION,
