@@ -2,6 +2,7 @@ package com.example.healthmonitor
 
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 
 data class Soldier(
     val id: String,
@@ -17,7 +18,8 @@ data class Soldier(
     var battery: Int,
     var status: String,
     var photoUri: String? = null,
-    var bloodGroup: String = "O+"
+    var bloodGroup: String = "O+",
+    var suitId: String? = null
 )
 
 fun hrZone(hr: Int?): String {
@@ -32,6 +34,16 @@ fun hrZone(hr: Int?): String {
 object SquadState {
     val squads        = mutableStateListOf<String>()
     val selectedSquad = mutableStateOf("All Squads")
+    val squadMap      = mutableStateMapOf<String, String>()
+
+    fun setSquads(items: List<Pair<String, String>>) {
+        squads.clear()
+        squadMap.clear()
+        items.forEach { (id, name) ->
+            squads.add(name)
+            squadMap[name] = id
+        }
+    }
 }
 
 object SoldierState {

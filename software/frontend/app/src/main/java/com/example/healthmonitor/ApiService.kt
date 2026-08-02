@@ -1,5 +1,6 @@
 package com.example.healthmonitor
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -85,14 +86,19 @@ object ApiService {
                     .build()
 
                 val response = client.newCall(request).execute()
+                val bodyString = response.body?.string() ?: ""
+                Log.d("ApiService", "Login request URL: ${NetworkConfig.BASE_URL}/auth/login")
+                Log.d("ApiService", "Login response code: ${response.code}")
+                Log.d("ApiService", "Login response body: $bodyString")
                 if (response.isSuccessful) {
-                    val json = JSONObject(response.body!!.string())
+                    val json = JSONObject(bodyString)
                     authToken = json.getString("access_token")
                     true
                 } else {
                     false
                 }
             } catch (e: Exception) {
+                Log.e("ApiService", "Login failed", e)
                 false
             }
         }
@@ -126,13 +132,64 @@ object ApiService {
                             battery    = if (s.isNull("battery")) 0 else s.getInt("battery"),
                             status     = s.getString("status"),
                             bloodGroup = s.optString("blood_group", "O+"),
-                            photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url")
+                            photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url"),
+                            suitId     = if (s.isNull("suit_id")) null else s.getString("suit_id")
                         )
                     )
                 }
                 soldiers
             } catch (e: Exception) {
                 emptyList()
+            }
+        }
+    }
+
+    suspend fun pairSuit(suitId: String, soldierId: String? = null, newSoldier: JSONObject? = null): Soldier? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject().apply {
+                    put("suit_id", suitId)
+                    soldierId?.let { put("soldier_id", it) }
+                    newSoldier?.let { put("new_soldier", it) }
+                }
+                val response = client.newCall(postRequest("/soldiers/pair-suit", body)).execute()
+                val responseStr = response.body?.string() ?: ""
+                if (response.isSuccessful && responseStr.isNotEmpty()) {
+                    val s = JSONObject(responseStr)
+                    Soldier(
+                        id         = s.getString("id"),
+                        name       = s.getString("name"),
+                        rankTitle  = s.getString("rank_title"),
+                        rankOrder  = s.getInt("rank_order"),
+                        serial     = s.getString("serial"),
+                        squad      = s.optString("squad_name", "Unknown"),
+                        role       = s.optString("role", "Infantry"),
+                        hr         = if (s.isNull("hr")) null else s.getInt("hr"),
+                        spo2       = if (s.isNull("spo2")) null else s.getInt("spo2"),
+                        temp       = if (s.isNull("temp")) null else s.getDouble("temp").toFloat(),
+                        battery    = if (s.isNull("battery")) 0 else s.getInt("battery"),
+                        status     = s.getString("status"),
+                        bloodGroup = s.optString("blood_group", "O+"),
+                        photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url"),
+                        suitId     = if (s.isNull("suit_id")) null else s.getString("suit_id")
+                    )
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e("ApiService", "pairSuit error: ${e.message}")
+                null
+            }
+        }
+    }
+
+    suspend fun unpairSuit(soldierId: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = client.newCall(postRequest("/soldiers/$soldierId/unpair-suit", JSONObject())).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                false
             }
         }
     }
