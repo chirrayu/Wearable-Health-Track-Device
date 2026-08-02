@@ -1,6 +1,11 @@
 #Environment variables, secret keys, database URL, FCM credentials, sampling rate defaults — one place for all settings.
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(path=None):
+        """Fallback no-op load_dotenv when python-dotenv is unavailable."""
+        return None
 import os
 import json
 import tempfile
@@ -58,12 +63,24 @@ else:
         "firebase_credentials.json"
     )
 
-# ── Alert thresholds (match your Android rules engine) ────────────
-# Non-login configuration (thresholds, AWS, server settings) removed to keep only login-related data
-# Essential server settings restored for application startup
+# ── Server & optional AWS configuration ───────────────────────────────────────
+# Core server settings (required)
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # optional, used for self‑ping
+# Optional AWS S3 configuration – may be omitted in environments without S3 (e.g., Render free tier)
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 
 # Exported symbols for explicit imports
-__all__ = ["HOST", "PORT", "RENDER_EXTERNAL_URL"]
+__all__ = [
+    "HOST",
+    "PORT",
+    "RENDER_EXTERNAL_URL",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "S3_BUCKET_NAME",
+]
