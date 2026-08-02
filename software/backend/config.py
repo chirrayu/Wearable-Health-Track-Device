@@ -60,3 +60,7 @@ else:
 
 # ── Alert thresholds (match your Android rules engine) ───────────
 # Non-login configuration (thresholds, AWS, server settings) removed to keep only login-related data
+# Essential server settings restored for application startup
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # optional, used for self‑ping
