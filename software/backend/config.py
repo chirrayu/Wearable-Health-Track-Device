@@ -59,19 +59,4 @@ else:
     )
 
 # ── Alert thresholds (match your Android rules engine) ───────────
-HR_CRITICAL_THRESHOLD    = int(os.getenv("HR_CRITICAL_THRESHOLD", "130"))
-SPO2_CRITICAL_THRESHOLD  = int(os.getenv("SPO2_CRITICAL_THRESHOLD", "90"))
-TEMP_CRITICAL_THRESHOLD  = float(os.getenv("TEMP_CRITICAL_THRESHOLD", "103.0"))
-NO_MOVEMENT_MINUTES      = int(os.getenv("NO_MOVEMENT_MINUTES", "30"))
-
-# ── Server ────────────────────────────────────────────────────────
-HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "8000"))
-
-# ── Render (for self-ping uptime bot) ────────────────────────────
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # auto-set by Render
-# ── AWS S3 ────────────────────────────────────────────────────────
-AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION            = os.getenv("AWS_REGION", "ap-south-1")
-S3_BUCKET_NAME        = os.getenv("S3_BUCKET_NAME", "triage-ai-photos")
+# Non-login configuration (thresholds, AWS, server settings) removed to keep only login-related data
