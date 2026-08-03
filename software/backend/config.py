@@ -75,6 +75,11 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 
 # Exported symbols for explicit imports
+HR_CRITICAL_THRESHOLD = int(os.getenv("HR_CRITICAL_THRESHOLD", "140"))
+SPO2_CRITICAL_THRESHOLD = int(os.getenv("SPO2_CRITICAL_THRESHOLD", "90"))
+TEMP_CRITICAL_THRESHOLD = float(os.getenv("TEMP_CRITICAL_THRESHOLD", "102.0"))
+NO_MOVEMENT_MINUTES = int(os.getenv("NO_MOVEMENT_MINUTES", "30"))
+
 __all__ = [
     "HOST",
     "PORT",
