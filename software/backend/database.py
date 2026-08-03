@@ -134,11 +134,40 @@ class AdminCredential(Base):
 
 
 # ── DB init helper ────────────────────────────────────────────────
+def _add_column_if_missing(conn, table: str, column: str, col_type: str):
+    """Attempt to ADD a column; silently ignore if it already exists."""
+    from sqlalchemy import text
+    try:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+        conn.commit()
+        print(f"  [OK] Added missing column {table}.{column}")
+    except Exception:
+        conn.rollback()  # column already exists — nothing to do
+
+
+def _auto_migrate(engine):
+    """Add any columns that exist in the ORM models but are missing from
+    the live database.  This keeps Render's PostgreSQL (and local SQLite)
+    in sync without a full Alembic setup."""
+    with engine.connect() as conn:
+        # ── soldiers table ────────────────────────────────────────
+        _add_column_if_missing(conn, "soldiers", "suit_id", "VARCHAR UNIQUE")
+        _add_column_if_missing(conn, "soldiers", "photo_path", "VARCHAR")
+        # ── vitals table ──────────────────────────────────────────
+        _add_column_if_missing(conn, "vitals", "activity_index", "INTEGER")
+        _add_column_if_missing(conn, "vitals", "respiratory_rate", "INTEGER")
+        _add_column_if_missing(conn, "vitals", "blast_severity", "FLOAT")
+        _add_column_if_missing(conn, "vitals", "blast_timestamp", "TIMESTAMP")
+        _add_column_if_missing(conn, "vitals", "score", "FLOAT")
+        _add_column_if_missing(conn, "vitals", "classification", "VARCHAR")
+
+
 def init_db():
     from passlib.context import CryptContext
     from config import ADMIN_PASSWORD
     
     Base.metadata.create_all(bind=engine)
+    _auto_migrate(engine)
 
     db = SessionLocal()
     try:
@@ -151,7 +180,7 @@ def init_db():
             # Update existing credential with current password
             admin_cred.password_hash = password_hash
             db.commit()
-            print(f"✓ Admin credential updated with ADMIN_PASSWORD from config")
+            print("[OK] Admin credential updated with ADMIN_PASSWORD from config")
         else:
             # Create new credential
             admin_cred = AdminCredential(
@@ -160,7 +189,7 @@ def init_db():
             )
             db.add(admin_cred)
             db.commit()
-            print(f"✓ Admin credential created with ADMIN_PASSWORD from config")
+            print("[OK] Admin credential created with ADMIN_PASSWORD from config")
         
         # Seed demo soldier if no soldiers exist yet
         if db.query(SoldierModel).first():
