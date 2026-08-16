@@ -12,7 +12,7 @@ from database import get_db, AdminCredential
 from config import (
     SECRET_KEY, ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    ADMIN_USERNAME, ADMIN_PASSWORD
+    ADMIN_USERNAME, ADMIN_PASSWORD, RESET_ADMIN_PASSWORD
 )
 
 router = APIRouter()
@@ -57,6 +57,27 @@ def get_or_create_password_hash(db: Session) -> str:
         db.commit()
         db.refresh(row)
     return row.password_hash
+
+
+def reset_password_from_environment(db: Session) -> bool:
+    """One-time recovery path for managed deployments without shell access.
+
+    Set RESET_ADMIN_PASSWORD=true in the host environment, deploy once, then
+    remove the variable. Leaving it enabled would overwrite any later password
+    change each time the service restarts.
+    """
+    if not RESET_ADMIN_PASSWORD:
+        return False
+
+    row = db.query(AdminCredential).filter(AdminCredential.id == "admin").first()
+    if row is None:
+        row = AdminCredential(id="admin", password_hash=hash_password(ADMIN_PASSWORD))
+        db.add(row)
+    else:
+        row.password_hash = hash_password(ADMIN_PASSWORD)
+    db.commit()
+    print("WARNING: Admin password reset from environment. Remove RESET_ADMIN_PASSWORD now.")
+    return True
 
 
 def create_access_token(data: dict) -> str:

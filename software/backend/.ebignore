@@ -1,0 +1,11 @@
+.env
+photo.env
+firebase_credentials.json
+triage_ai.db
+photos/
+__pycache__/
+*.pyc
+.pytest_cache/
+test_*.py
+simulate_vitals.py
+seed.py

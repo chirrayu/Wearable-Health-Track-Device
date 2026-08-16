@@ -25,6 +25,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8   # 8 hour sessions
 # ── Admin credentials (change before deployment) ──────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "triage2024")
+# Set only for one deployment when the stored admin password needs recovery.
+# Remove it immediately after a successful login.
+RESET_ADMIN_PASSWORD = os.getenv("RESET_ADMIN_PASSWORD", "false").lower() == "true"
 
 
 def validate_production_settings() -> None:

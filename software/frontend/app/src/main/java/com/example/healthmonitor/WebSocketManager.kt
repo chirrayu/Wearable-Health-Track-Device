@@ -175,13 +175,14 @@ object WebSocketManager {
                 val soldier = Soldier(
                     id        = s.get("soldier_id").asString,
                     name      = s.get("name").asString,
-                    rankTitle = "",
-                    rankOrder = 1,
+                    rankTitle = s.get("rank_title")?.let { if (it.isJsonNull) "" else it.asString } ?: "",
+                    rankOrder = s.get("rank_order")?.let { if (it.isJsonNull) 1 else it.asInt } ?: 1,
                     serial    = s.get("serial").asString,
                     squad     = s.get("squad")?.let {
                         if (it.isJsonNull) "Unknown" else it.asString
                     } ?: "Unknown",
-                    role      = "",
+                    role      = s.get("role")?.let { if (it.isJsonNull) "" else it.asString } ?: "",
+                    bloodGroup = s.get("blood_group")?.let { if (it.isJsonNull) "O+" else it.asString } ?: "O+",
                     hr        = s.get("hr")?.let {
                         if (it.isJsonNull) null else it.asInt
                     },
