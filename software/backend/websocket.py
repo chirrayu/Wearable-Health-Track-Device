@@ -12,6 +12,9 @@ from datetime import datetime
 from database import get_db, SessionLocal, SoldierModel, VitalsModel, LocationModel, AlertModel, ESP32DeviceModel
 from sqlalchemy import desc
 
+# Imported lazily inside handlers to avoid circular imports at module load time.
+# (vitals imports websocket, so we import vitals only when needed.)
+
 router = APIRouter()
 
 
@@ -206,6 +209,10 @@ def build_full_snapshot(db: Session) -> dict:
         soldier_data.append({
             "soldier_id": soldier.id,
             "name": f"{soldier.rank_title} {soldier.name}",
+            "rank_title": soldier.rank_title,
+            "rank_order": soldier.rank_order,
+            "role": soldier.role,
+            "blood_group": soldier.blood_group,
             "serial": soldier.serial,
             "squad": soldier.squad_rel.name if soldier.squad_rel else None,
             "status": soldier.status,
@@ -268,9 +275,26 @@ async def websocket_connect(websocket: WebSocket, feed: str = "all"):
                 # Android app forwards BLE telemetry from ESP32
                 elif msg.get("type") == "esp32_ble_telemetry":
                     device_id = msg.get("device_id")
+                    data = msg.get("data", {})
                     if device_id:
-                        esp32_manager.update_device(device_id, {**msg.get("data", {}), "mode": "ble"})
-                        # TODO: Call vitals.process_vitals_reading here if you want to save BLE data to DB
+                        esp32_manager.update_device(device_id, {**data, "mode": "ble"})
+                        # Save BLE telemetry to DB and trigger alert rules engine
+                        soldier_id = data.get("soldier_id")
+                        if soldier_id:
+                            try:
+                                from vitals import process_vitals_reading, VitalsIn
+                                vitals_body = VitalsIn(
+                                    soldier_id=soldier_id,
+                                    hr=data.get("hr"),
+                                    spo2=data.get("spo2"),
+                                    temp=data.get("temp"),
+                                    battery=data.get("battery"),
+                                    device_id=device_id,
+                                    connection_type="ble",
+                                )
+                                await process_vitals_reading(vitals_body, db)
+                            except Exception as e:
+                                print(f"BLE vitals save error: {e}")
                         await websocket.send_text(json.dumps({"type": "ack", "status": "ble_data_received"}))
 
                 # Admin/App requests ESP32 to switch connection mode
@@ -323,8 +347,23 @@ async def esp32_websocket_connect(websocket: WebSocket, device_id: str):
 
             if msg.get("type") == "telemetry":
                 esp32_manager.update_device(device_id, msg)
-                # TODO: Call vitals.process_vitals_reading here to save Wi-Fi data to DB
-                
+                # Save Wi-Fi telemetry to DB and trigger alert rules engine
+                soldier_id = msg.get("soldier_id")
+                if soldier_id:
+                    try:
+                        from vitals import process_vitals_reading, VitalsIn
+                        vitals_body = VitalsIn(
+                            soldier_id=soldier_id,
+                            hr=msg.get("hr"),
+                            spo2=msg.get("spo2"),
+                            temp=msg.get("temp"),
+                            battery=msg.get("battery"),
+                            device_id=device_id,
+                            connection_type="wifi",
+                        )
+                        await process_vitals_reading(vitals_body, db)
+                    except Exception as e:
+                        print(f"Wi-Fi vitals save error: {e}")
                 await websocket.send_text(json.dumps({"type": "ack", "status": "telemetry_received"}))
                 
             elif msg.get("type") == "command_response":
