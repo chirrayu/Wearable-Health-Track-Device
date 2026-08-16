@@ -42,31 +42,36 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 
 // ── Colors ────────────────────────────────────────────────────────
-private val bgDark      = Color(0xFF07111F)
-private val cardDark    = Color(0xFF081B33)
-private val borderDark  = Color(0xFF1A3A5C)
-private val textMuted   = Color(0xFF6B7F99)
-private val accentBlue  = Color(0xFF00C2FF)
-private val statusGreen = Color(0xFF00E676)
-private val statusYellow= Color(0xFFFFD600)
-private val statusRed   = Color(0xFFFF1744)
-private val statusGray  = Color(0xFF757575)
+val BgDark = Color(0xFF07111F)
+val CardDark = Color(0xFF081B33)
+val BorderDark = Color(0xFF1A3A5C)
+
+val TextMuted = Color(0xFF6B7F99)
+
+val AccentBlue = Color(0xFF00C2FF)
+
+val StatusGreen = Color(0xFF00E676)
+val StatusYellow = Color(0xFFFFD600)
+val StatusRed = Color(0xFFFF1744)
+val StatusGray = Color(0xFF757575)
 
 fun statusColor(status: String): Color = when (status) {
-    "stable"   -> statusGreen
-    "serious"  -> statusYellow
-    "critical" -> statusRed
-    else       -> statusGray
+    "stable"   -> StatusGreen
+    "serious"  -> StatusYellow
+    "critical" -> StatusRed
+    else       -> StatusGray
 }
 
 fun hrColor(hr: Int?): Color = when (hrZone(hr)) {
-    "green"  -> statusGreen
-    "yellow" -> statusYellow
-    "red"    -> statusRed
-    else     -> textMuted
+    "green"  -> StatusGreen
+    "yellow" -> StatusYellow
+    "red"    -> StatusRed
+    else     -> TextMuted
 }
 
 
@@ -74,13 +79,33 @@ fun hrColor(hr: Int?): Color = when (hrZone(hr)) {
 @Composable
 fun SoldiersScreen() {
 
+    val scope = rememberCoroutineScope()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSoldier by remember { mutableStateOf<Soldier?>(null) }
     var deletingSoldier by remember { mutableStateOf<Soldier?>(null) }
 
+    // ⚠ NEW — simple error banner so a failed save/delete is visible
+    // instead of silently doing nothing (or, as before, silently
+    // "succeeding" locally while the backend never actually changed).
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    if (errorMessage != null) {
+        LaunchedEffect(errorMessage) {
+            delay(3000)
+            errorMessage = null
+        }
+    }
+
     val selectedSquad by SquadState.selectedSquad
+
+    // ⚠ NEW — load the real squad list from the backend once when this
+    // screen first appears. Previously SquadState.squads started empty
+    // and was only ever appended to locally.
+    LaunchedEffect(Unit) {
+        SquadState.loadSquads()
+    }
 
     val visibleSoldiers = SoldierState.soldiers
         .filter { selectedSquad == "All Squads" || it.squad == selectedSquad }
@@ -97,8 +122,23 @@ fun SoldiersScreen() {
             existing = null,
             onDismiss = { showAddDialog = false },
             onSave = { soldier ->
-                SoldierState.addSoldier(soldier)
-                showAddDialog = false
+                // ⚠ CHANGED — previously called SoldierState.addSoldier()
+                // synchronously, which only touched the local list. Now
+                // resolves the real squad_id and makes a real network
+                // call, closing the dialog only on confirmed success.
+                val squadId = SquadState.squadIds[soldier.squad]
+                if (squadId == null) {
+                    errorMessage = "Unknown squad — try again after squads finish loading"
+                    return@SoldierEditDialog
+                }
+                scope.launch {
+                    val ok = SoldierState.addSoldier(soldier, squadId)
+                    if (ok) {
+                        showAddDialog = false
+                    } else {
+                        errorMessage = "Failed to add soldier — check connection"
+                    }
+                }
             }
         )
     }
@@ -108,8 +148,17 @@ fun SoldiersScreen() {
             existing = soldier,
             onDismiss = { editingSoldier = null },
             onSave = { updated ->
-                SoldierState.updateSoldier(updated)
-                editingSoldier = null
+                // ⚠ CHANGED — previously called SoldierState.updateSoldier()
+                // synchronously (local-only). Now a real PUT request;
+                // dialog only closes once the backend confirms.
+                scope.launch {
+                    val ok = SoldierState.updateSoldier(updated)
+                    if (ok) {
+                        editingSoldier = null
+                    } else {
+                        errorMessage = "Failed to save changes — check connection"
+                    }
+                }
             }
         )
     }
@@ -117,25 +166,33 @@ fun SoldiersScreen() {
     deletingSoldier?.let { soldier ->
         AlertDialog(
             onDismissRequest = { deletingSoldier = null },
-            containerColor = cardDark,
+            containerColor = CardDark,
             title = { Text("Remove Soldier", color = Color.White) },
             text = {
                 Text(
                     "Remove ${soldier.name} (${soldier.serial}) from the roster?",
-                    color = textMuted
+                    color = TextMuted
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    SoldierState.removeSoldier(soldier.id)
-                    deletingSoldier = null
+                    // ⚠ CHANGED — previously local-only removeAll(); the
+                    // soldier would silently reappear on the next
+                    // WebSocket snapshot since the backend still had them.
+                    scope.launch {
+                        val ok = SoldierState.removeSoldier(soldier.id)
+                        if (!ok) {
+                            errorMessage = "Failed to remove soldier — check connection"
+                        }
+                        deletingSoldier = null
+                    }
                 }) {
-                    Text("Remove", color = statusRed, fontWeight = FontWeight.Bold)
+                    Text("Remove", color = StatusRed, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deletingSoldier = null }) {
-                    Text("Cancel", color = textMuted)
+                    Text("Cancel", color = TextMuted)
                 }
             }
         )
@@ -144,7 +201,7 @@ fun SoldiersScreen() {
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgDark)
+            .background(BgDark)
     ) {
 
         SquadSidebar()
@@ -155,6 +212,19 @@ fun SoldiersScreen() {
                 .fillMaxHeight()
                 .padding(16.dp)
         ) {
+
+            if (errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(StatusRed.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .border(1.dp, StatusRed.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(errorMessage ?: "", color = StatusRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(10.dp))
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -170,16 +240,16 @@ fun SoldiersScreen() {
                 Box(
                     modifier = Modifier
                         .height(44.dp)
-                        .background(accentBlue.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                        .border(1.dp, accentBlue.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .background(AccentBlue.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                        .border(1.dp, AccentBlue.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                         .clickable { showAddDialog = true }
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Add, contentDescription = "Add", tint = accentBlue, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Add, contentDescription = "Add", tint = AccentBlue, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("ADD SOLDIER", color = accentBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("ADD SOLDIER", color = AccentBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -207,21 +277,23 @@ fun SoldiersScreen() {
 @Composable
 fun SquadSidebar() {
 
+    val scope = rememberCoroutineScope()
     var showAddSquad by remember { mutableStateOf(false) }
     var newSquadName by remember { mutableStateOf("") }
+    var isAddingSquad by remember { mutableStateOf(false) }
     val selectedSquad by SquadState.selectedSquad
 
     Column(
         modifier = Modifier
             .width(180.dp)
             .fillMaxHeight()
-            .background(cardDark)
-            .border(width = 1.dp, color = borderDark)
+            .background(CardDark)
+            .border(width = 1.dp, color = BorderDark)
             .padding(12.dp)
     ) {
         Text(
             text = "SQUADS",
-            color = textMuted,
+            color = TextMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp
@@ -248,13 +320,14 @@ fun SquadSidebar() {
             OutlinedTextField(
                 value = newSquadName,
                 onValueChange = { newSquadName = it },
-                placeholder = { Text("Squad name", color = textMuted, fontSize = 12.sp) },
+                placeholder = { Text("Squad name", color = TextMuted, fontSize = 12.sp) },
                 singleLine = true,
+                enabled = !isAddingSquad,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
-                    focusedBorderColor = accentBlue,
-                    unfocusedBorderColor = borderDark
+                    focusedBorderColor = AccentBlue,
+                    unfocusedBorderColor = BorderDark
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -263,43 +336,56 @@ fun SquadSidebar() {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(accentBlue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                        .clickable {
+                        .background(AccentBlue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                        .clickable(enabled = !isAddingSquad) {
+                            // ⚠ CHANGED — previously did
+                            // SquadState.squads.add(name) locally only,
+                            // never telling the backend a squad existed.
                             if (newSquadName.isNotBlank()) {
-                                SquadState.squads.add(newSquadName.trim())
-                                newSquadName = ""
-                                showAddSquad = false
+                                val name = newSquadName.trim()
+                                scope.launch {
+                                    isAddingSquad = true
+                                    val ok = SquadState.addSquad(name)
+                                    isAddingSquad = false
+                                    if (ok) {
+                                        newSquadName = ""
+                                        showAddSquad = false
+                                    }
+                                }
                             }
                         }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Add", color = accentBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isAddingSquad) "Adding..." else "Add",
+                        color = AccentBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold
+                    )
                 }
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(borderDark, RoundedCornerShape(6.dp))
+                        .background(BorderDark, RoundedCornerShape(6.dp))
                         .clickable { showAddSquad = false; newSquadName = "" }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Cancel", color = textMuted, fontSize = 11.sp)
+                    Text("Cancel", color = TextMuted, fontSize = 11.sp)
                 }
             }
         } else {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, borderDark, RoundedCornerShape(6.dp))
+                    .border(1.dp, BorderDark, RoundedCornerShape(6.dp))
                     .clickable { showAddSquad = true }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = "Add squad", tint = textMuted, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Add, contentDescription = "Add squad", tint = TextMuted, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Add Squad", color = textMuted, fontSize = 12.sp)
+                    Text("Add Squad", color = TextMuted, fontSize = 12.sp)
                 }
             }
         }
@@ -312,12 +398,12 @@ fun SquadRow(name: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (selected) accentBlue.copy(alpha = 0.15f) else Color.Transparent,
+                if (selected) AccentBlue.copy(alpha = 0.15f) else Color.Transparent,
                 RoundedCornerShape(6.dp)
             )
             .border(
                 width = 1.dp,
-                color = if (selected) accentBlue.copy(alpha = 0.5f) else Color.Transparent,
+                color = if (selected) AccentBlue.copy(alpha = 0.5f) else Color.Transparent,
                 shape = RoundedCornerShape(6.dp)
             )
             .clickable { onClick() }
@@ -325,7 +411,7 @@ fun SquadRow(name: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         Text(
             text = name,
-            color = if (selected) accentBlue else textMuted,
+            color = if (selected) AccentBlue else TextMuted,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         )
@@ -339,23 +425,23 @@ fun SearchBar(value: String, onValueChange: (String) -> Unit, modifier: Modifier
     Row(
         modifier = modifier
             .height(44.dp)
-            .background(cardDark, RoundedCornerShape(8.dp))
-            .border(1.dp, borderDark, RoundedCornerShape(8.dp))
+            .background(CardDark, RoundedCornerShape(8.dp))
+            .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.Search, contentDescription = "Search", tint = textMuted, modifier = Modifier.size(18.dp))
+        Icon(Icons.Default.Search, contentDescription = "Search", tint = TextMuted, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Box(modifier = Modifier.weight(1f)) {
             if (value.isEmpty()) {
-                Text("Search soldiers...", color = textMuted, fontSize = 14.sp)
+                Text("Search soldiers...", color = TextMuted, fontSize = 14.sp)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                cursorBrush = SolidColor(accentBlue),
+                cursorBrush = SolidColor(AccentBlue),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -375,21 +461,21 @@ fun FilterChips(selected: String, onSelect: (String) -> Unit) {
         filters.forEach { filter ->
             val isSelected = selected == filter
             val color = when (filter) {
-                "Stable"   -> statusGreen
-                "Serious"  -> statusYellow
-                "Critical" -> statusRed
-                "Offline"  -> statusGray
-                else       -> accentBlue
+                "Stable"   -> StatusGreen
+                "Serious"  -> StatusYellow
+                "Critical" -> StatusRed
+                "Offline"  -> StatusGray
+                else       -> AccentBlue
             }
             Box(
                 modifier = Modifier
                     .background(
-                        if (isSelected) color.copy(alpha = 0.15f) else cardDark,
+                        if (isSelected) color.copy(alpha = 0.15f) else CardDark,
                         RoundedCornerShape(6.dp)
                     )
                     .border(
                         1.dp,
-                        if (isSelected) color else borderDark,
+                        if (isSelected) color else BorderDark,
                         RoundedCornerShape(6.dp)
                     )
                     .clickable { onSelect(filter) }
@@ -397,7 +483,7 @@ fun FilterChips(selected: String, onSelect: (String) -> Unit) {
             ) {
                 Text(
                     text = filter,
-                    color = if (isSelected) color else textMuted,
+                    color = if (isSelected) color else TextMuted,
                     fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
@@ -417,8 +503,8 @@ fun SoldierTable(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(cardDark, RoundedCornerShape(10.dp))
-            .border(1.dp, borderDark, RoundedCornerShape(10.dp))
+            .background(CardDark, RoundedCornerShape(10.dp))
+            .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
     ) {
         Row(
             modifier = Modifier
@@ -435,28 +521,11 @@ fun SoldierTable(
             TableHeaderText("TEMP", Modifier.weight(0.9f))
             TableHeaderText("BATTERY/RISK", Modifier.weight(1.6f))
             TableHeaderText("STATUS", Modifier.weight(1.1f))
-            TableHeaderText("BLOOD", Modifier.weight(0.7f))   // ← ADD THIS
-            Spacer(Modifier.width(60.dp))
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TableHeaderText("#", Modifier.width(28.dp))
-            TableHeaderText("SOLDIER", Modifier.weight(2.2f))
-            TableHeaderText("SQUAD", Modifier.weight(1f))
-            TableHeaderText("ROLE", Modifier.weight(1.3f))
-            TableHeaderText("HR", Modifier.weight(0.9f))
-            TableHeaderText("SPO2", Modifier.weight(0.9f))
-            TableHeaderText("TEMP", Modifier.weight(0.9f))
-            TableHeaderText("BATTERY/RISK", Modifier.weight(1.6f))
-            TableHeaderText("STATUS", Modifier.weight(1.1f))
+            TableHeaderText("BLOOD", Modifier.weight(0.7f))
             Spacer(Modifier.width(60.dp))
         }
 
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderDark))
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderDark))
 
         if (soldiers.isEmpty()) {
             Box(
@@ -465,7 +534,7 @@ fun SoldierTable(
                     .padding(40.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No soldiers match your filters", color = textMuted, fontSize = 13.sp)
+                Text("No soldiers match your filters", color = TextMuted, fontSize = 13.sp)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -477,7 +546,7 @@ fun SoldierTable(
                         onEdit = { onEdit(soldier) },
                         onDelete = { onDelete(soldier) }
                     )
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderDark.copy(alpha = 0.5f)))
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderDark.copy(alpha = 0.5f)))
                 }
             }
         }
@@ -488,7 +557,7 @@ fun SoldierTable(
 fun TableHeaderText(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = textMuted,
+        color = TextMuted,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.5.sp,
@@ -510,7 +579,7 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
         verticalAlignment = Alignment.CenterVertically
     ) {
 
-        Text(text = "$index", color = textMuted, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+        Text(text = "$index", color = TextMuted, fontSize = 13.sp, modifier = Modifier.width(28.dp))
 
         Row(
             modifier = Modifier.weight(2.2f),
@@ -525,12 +594,12 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Text(text = soldier.serial, color = textMuted, fontSize = 11.sp)
+                Text(text = soldier.serial, color = TextMuted, fontSize = 11.sp)
             }
         }
 
-        Text(text = soldier.squad, color = textMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(text = soldier.role, color = textMuted, fontSize = 13.sp, modifier = Modifier.weight(1.3f))
+        Text(text = soldier.squad, color = TextMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(text = soldier.role, color = TextMuted, fontSize = 13.sp, modifier = Modifier.weight(1.3f))
 
         Row(
             modifier = Modifier.weight(0.9f),
@@ -541,13 +610,13 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
                 Spacer(Modifier.width(4.dp))
                 Text(text = "${soldier.hr}", color = hrColor(soldier.hr), fontSize = 13.sp, fontWeight = FontWeight.Bold)
             } else {
-                Text(text = "—", color = textMuted, fontSize = 13.sp)
+                Text(text = "—", color = TextMuted, fontSize = 13.sp)
             }
         }
 
         Text(
             text = soldier.spo2?.let { "$it%" } ?: "—%",
-            color = if (soldier.spo2 != null) accentBlue else textMuted,
+            color = if (soldier.spo2 != null) AccentBlue else TextMuted,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.weight(0.9f)
@@ -591,7 +660,7 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = "Edit",
-                    tint = accentBlue,
+                    tint = AccentBlue,
                     modifier = Modifier
                         .size(18.dp)
                         .clickable { onEdit() }
@@ -600,7 +669,7 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Delete",
-                    tint = statusRed,
+                    tint = StatusRed,
                     modifier = Modifier
                         .size(18.dp)
                         .clickable { onDelete() }
@@ -618,10 +687,10 @@ fun SoldierRow(index: Int, soldier: Soldier, onEdit: () -> Unit, onDelete: () ->
 fun SoldierAvatar(photoUri: String?, name: String) {
     Box(
         modifier = Modifier
-            .size(48.dp)                    // ← change to make big
+            .size(48.dp)
             .clip(CircleShape)
-            .background(cardDark)
-            .border(1.dp, borderDark, CircleShape),
+            .background(CardDark)
+            .border(1.dp, BorderDark, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (photoUri != null) {
@@ -634,8 +703,8 @@ fun SoldierAvatar(photoUri: String?, name: String) {
         } else {
             Text(
                 text = name.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString(""),
-                color = textMuted,
-                fontSize = 15.sp,            // ← slightly bigger to match
+                color = TextMuted,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -676,20 +745,20 @@ fun BatteryRiskBar(battery: Int, riskColor: Color) {
             modifier = Modifier
                 .width(50.dp)
                 .height(6.dp)
-                .background(borderDark, RoundedCornerShape(3.dp))
+                .background(BorderDark, RoundedCornerShape(3.dp))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(battery / 100f)
                     .background(
-                        if (battery < 20) statusRed else if (battery < 50) statusYellow else statusGreen,
+                        if (battery < 20) StatusRed else if (battery < 50) StatusYellow else StatusGreen,
                         RoundedCornerShape(3.dp)
                     )
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text(text = "$battery%", color = textMuted, fontSize = 11.sp)
+        Text(text = "$battery%", color = TextMuted, fontSize = 11.sp)
         Spacer(Modifier.width(4.dp))
         Text(
             text = "${100 - battery}%",
@@ -746,7 +815,7 @@ fun SoldierEditDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(cardDark, RoundedCornerShape(12.dp))
+                .background(CardDark, RoundedCornerShape(12.dp))
                 .padding(20.dp)
         ) {
             Row(
@@ -764,7 +833,7 @@ fun SoldierEditDialog(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close",
-                    tint = textMuted,
+                    tint = TextMuted,
                     modifier = Modifier.size(18.dp).clickable { onDismiss() }
                 )
             }
@@ -779,8 +848,8 @@ fun SoldierEditDialog(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .background(bgDark)
-                        .border(1.dp, borderDark, CircleShape)
+                        .background(BgDark)
+                        .border(1.dp, BorderDark, CircleShape)
                         .clickable { launcher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
@@ -792,7 +861,7 @@ fun SoldierEditDialog(
                             modifier = Modifier.fillMaxSize().clip(CircleShape)
                         )
                     } else {
-                        Icon(Icons.Default.Person, contentDescription = "Add photo", tint = textMuted, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.Person, contentDescription = "Add photo", tint = TextMuted, modifier = Modifier.size(28.dp))
                     }
                 }
             }
@@ -800,7 +869,7 @@ fun SoldierEditDialog(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "Tap to choose photo",
-                color = textMuted,
+                color = TextMuted,
                 fontSize = 11.sp,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
@@ -825,11 +894,9 @@ fun SoldierEditDialog(
 
             Spacer(Modifier.height(10.dp))
             DialogField("Role (e.g. Rifleman)", role) { role = it }
-            Spacer(Modifier.height(10.dp))
-            DialogField("Role (e.g. Rifleman)", role) { role = it }
 
-            Spacer(Modifier.height(10.dp))                          // ← ADD THIS BLOCK
-            Text("Blood Group", color = textMuted, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            Text("Blood Group", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -839,41 +906,41 @@ fun SoldierEditDialog(
                     Box(
                         modifier = Modifier
                             .background(
-                                if (bloodGroup == bg) Color(0xFFFF1744).copy(alpha = 0.15f) else bgDark,
+                                if (bloodGroup == bg) Color(0xFFFF1744).copy(alpha = 0.15f) else BgDark,
                                 RoundedCornerShape(6.dp)
                             )
                             .border(
                                 1.dp,
-                                if (bloodGroup == bg) Color(0xFFFF1744) else borderDark,
+                                if (bloodGroup == bg) Color(0xFFFF1744) else BorderDark,
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable { bloodGroup = bg }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text(bg, color = if (bloodGroup == bg) Color(0xFFFF1744) else textMuted, fontSize = 12.sp)
+                        Text(bg, color = if (bloodGroup == bg) Color(0xFFFF1744) else TextMuted, fontSize = 12.sp)
                     }
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text("Squad", color = textMuted, fontSize = 12.sp)
+            Text("Squad", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SquadState.squads.forEach { s ->
                     Box(
                         modifier = Modifier
                             .background(
-                                if (squad == s) accentBlue.copy(alpha = 0.15f) else bgDark,
+                                if (squad == s) AccentBlue.copy(alpha = 0.15f) else BgDark,
                                 RoundedCornerShape(6.dp)
                             )
                             .border(
                                 1.dp,
-                                if (squad == s) accentBlue else borderDark,
+                                if (squad == s) AccentBlue else BorderDark,
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable { squad = s }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text(s, color = if (squad == s) accentBlue else textMuted, fontSize = 12.sp)
+                        Text(s, color = if (squad == s) AccentBlue else TextMuted, fontSize = 12.sp)
                     }
                 }
             }
@@ -892,13 +959,13 @@ fun SoldierEditDialog(
                         .clickable { onDismiss() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("CANCEL", color = textMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("CANCEL", color = TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(40.dp)
-                        .background(accentBlue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                        .background(AccentBlue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                         .clickable {
                             if (name.isNotBlank()) {
                                 val soldier = Soldier(
@@ -914,14 +981,15 @@ fun SoldierEditDialog(
                                     temp = existing?.temp ?: 98.2f,
                                     battery = existing?.battery ?: 100,
                                     status = existing?.status ?: "stable",
-                                    photoUri = photoUri
+                                    photoUri = photoUri,
+                                    bloodGroup = bloodGroup
                                 )
                                 onSave(soldier)
                             }
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("SAVE", color = accentBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("SAVE", color = AccentBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -931,7 +999,7 @@ fun SoldierEditDialog(
 @Composable
 fun DialogField(label: String, value: String, onChange: (String) -> Unit) {
     Column {
-        Text(label, color = textMuted, fontSize = 11.sp)
+        Text(label, color = TextMuted, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
         OutlinedTextField(
             value = value,
@@ -940,8 +1008,8 @@ fun DialogField(label: String, value: String, onChange: (String) -> Unit) {
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                focusedBorderColor = accentBlue,
-                unfocusedBorderColor = borderDark
+                focusedBorderColor = AccentBlue,
+                unfocusedBorderColor = BorderDark
             ),
             modifier = Modifier.fillMaxWidth()
         )

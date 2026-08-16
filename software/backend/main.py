@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import init_db
-from config import HOST, PORT, RENDER_EXTERNAL_URL
+from config import HOST, PORT, RENDER_EXTERNAL_URL, validate_production_settings
 from auth import get_current_admin
 from alerts_notifier import init_firebase, register_device_token, unregister_device_token
 
@@ -55,6 +55,7 @@ async def self_ping():
 # ── Startup: init DB + Firebase + self-ping ──────────────────────
 @app.on_event("startup")
 async def on_startup():
+    validate_production_settings()
     init_db()
     init_firebase()
     asyncio.create_task(self_ping())

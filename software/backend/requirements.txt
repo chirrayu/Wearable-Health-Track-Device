@@ -16,3 +16,4 @@ firebase-admin
 python-multipart
 psycopg2-binary
 pymysql
+bcrypt==4.0.1

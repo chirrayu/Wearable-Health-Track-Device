@@ -19,6 +19,8 @@ Thumbs.db
 *.key
 *.secret
 credentials.json
+photo.env
+firebase_credentials.json
 
 # ==========================================
 # 3. Package Dependencies & Node Modules

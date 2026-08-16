@@ -17,10 +17,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.webkit.WebView
@@ -40,8 +42,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.WifiOff
 
 import androidx.compose.material3.Card
@@ -66,17 +68,10 @@ import com.google.android.gms.location.*
 
 // ── App State ─────────────────────────────────────────────────────
 object AppState {
-    var isLoggedIn = mutableStateOf(false)
-    var connectionStatus = mutableStateOf("OFFLINE")
-    var operatorName  = mutableStateOf("GHOST-6")
-    var criticalCount = mutableStateOf(1)
-    var alertCount = mutableStateOf(0)
-    var casualties    = mutableStateOf(listOf(
-        CasualtyItem("Sgt. Yuki Tanaka",  "Charlie · Scout",  "offline",  95),
-        CasualtyItem("Pvt. Ethan Cruz",   "Bravo · Rifleman", "critical", 88),
-        CasualtyItem("Cpl. James Okafor", "Bravo · Rifleman", "serious",  54),
-        CasualtyItem("Pvt. Leon Hayes",   "Delta · Rifleman", "serious",  47),
-    ))
+    var operatorName     = mutableStateOf("GHOST-6")
+    var criticalCount    = mutableStateOf(1)
+    var alertCount       = mutableStateOf(0)
+    var connectionStatus = mutableStateOf("OFFLINE")   // "CONNECTING" | "LIVE" | "OFFLINE" — set by WebSocketManager
 }
 
 val currentScreen =
@@ -101,6 +96,10 @@ class MainActivity : ComponentActivity() {
             val granted =
                 permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
             if (granted) startLocationUpdates()
+            // BLE permission results are read on-demand by BleSuitScanner
+            // when PairNewSuitScreen starts a scan — nothing further to
+            // do here, just make sure they were included in the request
+            // below so the OS prompt actually shows them.
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -110,27 +109,20 @@ class MainActivity : ComponentActivity() {
         fusedLocationClient =
             LocationServices.getFusedLocationProviderClient(this)
 
-        // Request GPS permission
-        requestPermissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            )
+        val permissionsToRequest = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
 
         setContent {
-            if (AppState.isLoggedIn.value) {
-                Dashboard(
-                    onWebViewReady = { wv -> webViewRef = wv }
-                )
-            } else {
-                LoginScreen(
-                    onLoginSuccess = {
-                        AppState.isLoggedIn.value = true
-                        WebSocketManager.connect(this)
-                    }
-                )
-            }
+            AppRoot(
+                onWebViewReady = { wv -> webViewRef = wv }
+            )
         }
     }
 
@@ -149,10 +141,11 @@ class MainActivity : ComponentActivity() {
 
                 val lat = location.latitude
                 val lng = location.longitude
+                // Records the real device location; the map composables
+                // use this to center the view on load instead of a
+                // hardcoded city — see BattlefieldMap/LiveMapScreen.
                 runOnUiThread {
-                    webViewRef?.evaluateJavascript(
-                        "updatePosition('P1', $lat, $lng);", null
-                    )
+                    LiveMapState.deviceLocation.value = Pair(lat, lng)
                 }
             }
         }
@@ -170,13 +163,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ── Stop GPS when app closes ─────────────────────────────────
+    // ── Stop GPS + WebSocket when app closes ─────────────────────
     override fun onDestroy() {
         super.onDestroy()
-        WebSocketManager.disconnect()
         if (::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
+        WebSocketManager.disconnect()
+        BleSuitScanner.stopScan(this)
+    }
+}
+
+
+// ── App Root — login gate ─────────────────────────────────────────
+@Composable
+fun AppRoot(onWebViewReady: (WebView) -> Unit) {
+    val context = LocalContext.current
+    var isLoggedIn by remember { mutableStateOf(false) }
+
+    if (isLoggedIn) {
+        Dashboard(onWebViewReady = onWebViewReady)
+    } else {
+        LoginScreen(onLoginSuccess = {
+            isLoggedIn = true
+            WebSocketManager.connect(context)
+        })
     }
 }
 
@@ -196,24 +207,6 @@ fun Dashboard(
             }
         }
     }
-
-    LaunchedEffect(Unit) {
-        if (SoldierState.soldiers.isEmpty()) {
-            val fetchedSoldiers = ApiService.getSoldiers()
-            if (fetchedSoldiers.isNotEmpty()) {
-                SoldierState.soldiers.clear()
-                SoldierState.soldiers.addAll(fetchedSoldiers)
-            }
-        }
-
-        val fetchedSquads = ApiService.getSquads()
-        if (fetchedSquads.isNotEmpty()) {
-            SquadState.setSquads(fetchedSquads)
-        } else if (SquadState.squads.isEmpty()) {
-            SquadState.squads.add("Alpha")
-        }
-    }
-
     val drawerState =
         rememberDrawerState(
             DrawerValue.Closed
@@ -329,11 +322,14 @@ fun Dashboard(
                             "Configure Suit" -> {
                                 ConfigureSuitScreen()
                             }
+                            "Casualty Queue" -> {
+                                CasualtyQueueScreen()
+                            }
                             "Pair New Suit" -> {
                                 PairNewSuitScreen()
                             }
-                            "AI Analytics" -> {
-                                AIAnalyticsScreen()
+                            "Medical Records" -> {
+                                MedicalRecordsScreen()
                             }
                             else -> {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -360,10 +356,10 @@ fun TopBar(onEditOperator: () -> Unit) {
 
     var time by remember { mutableStateOf("") }
 
+    val criticalCount    by AppState.criticalCount
+    val alertCount       by AppState.alertCount
+    val operatorName     by AppState.operatorName
     val connectionStatus by AppState.connectionStatus
-    val criticalCount by AppState.criticalCount
-    val alertCount    by AppState.alertCount
-    val operatorName  by AppState.operatorName
 
     // Live clock
     LaunchedEffect(Unit) {
@@ -417,24 +413,24 @@ fun TopBar(onEditOperator: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
 
-            // Connection badge
+            // Connection badge — reflects real WebSocket state
+            val connColor = when (connectionStatus) {
+                "LIVE"       -> Color(0xFF00E676)
+                "CONNECTING" -> Color(0xFFFFD600)
+                else         -> Color(0xFFFF1744)
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                val statusColor = when (connectionStatus) {
-                    "LIVE"       -> Color(0xFF00E676)
-                    "CONNECTING" -> Color(0xFFFFD600)
-                    else         -> Color(0xFF6B7F99)
-                }
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(statusColor, CircleShape)
+                        .background(connColor, CircleShape)
                 )
                 Text(
                     text = connectionStatus,
-                    color = statusColor,
+                    color = connColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -594,9 +590,48 @@ fun TopBar(onEditOperator: () -> Unit) {
         }
     }
 }
+
+// ⚠ REMOVED — TopHeader() used to live here. It was a completely unused
+// composable with hardcoded fake values (🔔 2, 17:59:42, "OPR · GHOST-6",
+// "• 1 CRITICAL"). Nothing in the codebase ever called it — Dashboard()
+// uses TopBar() above instead, which reflects real state. Deleted as
+// dead code; no behavior changes since it was never rendered.
+
 // ── Battlefield Map ───────────────────────────────────────────────
 @Composable
 fun BattlefieldMap(onWebViewReady: (WebView) -> Unit) {
+    var localWebView by remember { mutableStateOf<WebView?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (LiveMapState.activeMapWebView.value === localWebView) {
+                LiveMapState.activeMapWebView.value = null
+            }
+        }
+    }
+
+    var hasCentered by remember { mutableStateOf(false) }
+    LaunchedEffect(LiveMapState.deviceLocation.value, localWebView) {
+        val (lat, lng) = LiveMapState.deviceLocation.value ?: return@LaunchedEffect
+        val webView = localWebView ?: return@LaunchedEffect
+        if (!hasCentered) {
+            webView.evaluateJavascript("centerMap($lat, $lng, 15);", null)
+            hasCentered = true
+        }
+    }
+
+    LaunchedEffect(LiveMapState.pendingMapUpdate.value, localWebView) {
+        val update = LiveMapState.pendingMapUpdate.value ?: return@LaunchedEffect
+        val webView = localWebView ?: return@LaunchedEffect
+        val soldierName = SoldierState.soldiers.find { it.id == update.soldierId }
+            ?.let { "${it.rankTitle} ${it.name}" } ?: update.soldierId
+        val escapedName = soldierName.replace("'", "\\'")
+        webView.evaluateJavascript(
+            "upsertMarker('${update.soldierId}', '$escapedName', '${update.status}', ${update.lat}, ${update.lng});",
+            null
+        )
+    }
+
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -616,6 +651,8 @@ fun BattlefieldMap(onWebViewReady: (WebView) -> Unit) {
 
                 loadUrl("file:///android_asset/map.html")
 
+                localWebView = this
+                LiveMapState.activeMapWebView.value = this
                 onWebViewReady(this)
             }
         }
@@ -625,12 +662,21 @@ fun BattlefieldMap(onWebViewReady: (WebView) -> Unit) {
 // ── Status Summary Bar ────────────────────────────────────────────
 @Composable
 fun StatusSummaryBar() {
+    val soldiers = SoldierState.soldiers
+
+    val stableCount   = soldiers.count { it.status == "stable" }
+    val seriousCount  = soldiers.count { it.status == "serious" }
+    val criticalCount = soldiers.count { it.status == "critical" }
+    val offlineCount  = soldiers.count { it.status == "offline" }
+    val activeCount   = soldiers.size - offlineCount
+    val total         = soldiers.size.coerceAtLeast(1)
+
     val items = listOf(
-        StatusSummaryItem("ACTIVE",   7, Color(0xFF00C2FF), Icons.Default.Group),
-        StatusSummaryItem("STABLE",   4, Color(0xFF00FF88), Icons.Default.TrendingUp),
-        StatusSummaryItem("SERIOUS",  2, Color(0xFFFFC533), Icons.Default.ShowChart),
-        StatusSummaryItem("CRITICAL", 1, Color(0xFFFF445A), Icons.Default.Favorite),
-        StatusSummaryItem("OFFLINE",  1, Color(0xFF6B7F99), Icons.Default.WifiOff),
+        StatusSummaryItem("ACTIVE",   activeCount,   Color(0xFF00C2FF), Icons.Default.Group,               total),
+        StatusSummaryItem("STABLE",   stableCount,   Color(0xFF00FF88), Icons.AutoMirrored.Filled.TrendingUp, total),
+        StatusSummaryItem("SERIOUS",  seriousCount,  Color(0xFFFFC533), Icons.AutoMirrored.Filled.ShowChart,  total),
+        StatusSummaryItem("CRITICAL", criticalCount, Color(0xFFFF445A), Icons.Default.Favorite,             total),
+        StatusSummaryItem("OFFLINE",  offlineCount,  Color(0xFF6B7F99), Icons.Default.WifiOff,               total),
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -643,206 +689,6 @@ fun StatusSummaryBar() {
         }
     }
 }
-
-@Composable
-fun TopHeader(){
-
-    Row(
-
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    Color(0xFF041124)
-                )
-                .padding(
-                    horizontal = 18.dp,
-                    vertical = 12.dp
-                ),
-
-        verticalAlignment =
-            Alignment.CenterVertically
-
-    ){
-
-
-
-
-        Row(
-
-            modifier =
-                Modifier.weight(1f),
-
-            verticalAlignment =
-                Alignment.CenterVertically
-
-        ){
-
-            Text(
-
-                text =
-                    "TRIAGE AI",
-
-                color =
-                    Color(
-                        0xFF5D7EA4
-                    ),
-
-                fontSize =
-                    16.sp
-
-            )
-
-            Text(
-
-                text =
-                    " / Dashboard",
-
-                color =
-                    Color.White,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                fontSize =
-                    18.sp
-
-            )
-
-        }
-
-
-
-
-        Row(
-
-            verticalAlignment =
-                Alignment.CenterVertically,
-
-            horizontalArrangement =
-                Arrangement.spacedBy(
-                    16.dp
-                )
-
-        ){
-
-            Text(
-
-                text =
-                    "● LIVE",
-
-                color =
-                    Color(
-                        0xFF00FF88
-                    ),
-
-                fontSize =
-                    14.sp
-
-            )
-
-
-
-            Box(
-
-                modifier =
-                    Modifier
-                        .background(
-                            Color(
-                                0xFF2B1117
-                            ),
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                        )
-                        .padding(
-                            horizontal = 14.dp,
-                            vertical = 8.dp
-                        )
-
-            ){
-
-                Text(
-
-                    text =
-                        "• 1 CRITICAL",
-
-                    color =
-                        Color(
-                            0xFFFF445A
-                        )
-
-                )
-
-            }
-
-
-
-            Text(
-
-                text =
-                    "🔔 2",
-
-                color =
-                    Color.White
-
-            )
-
-
-
-            Text(
-
-                text =
-                    "🕒 17:59:42",
-
-                color =
-                    Color(
-                        0xFF6B7F99
-                    )
-
-            )
-
-
-
-            Box(
-
-                modifier =
-                    Modifier
-                        .background(
-                            Color(
-                                0xFF081B33
-                            ),
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                        )
-                        .padding(
-                            horizontal = 16.dp,
-                            vertical = 8.dp
-                        )
-
-            ){
-
-                Text(
-
-                    text =
-                        "OPR · GHOST-6",
-
-                    color =
-                        Color(
-                            0xFF5D7EA4
-                        )
-
-                )
-
-            }
-
-        }
-
-    }
-
-}
-
 
 // ── Single Status Card ────────────────────────────────────────────
 @Composable
@@ -864,7 +710,6 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
             verticalArrangement = Arrangement.SpaceBetween
         ) {
 
-            // Top row: label + icon
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -878,7 +723,6 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
                     letterSpacing = 1.sp
                 )
 
-                // Icon with colored background
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -897,7 +741,6 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
                 }
             }
 
-            // Count number
             Text(
                 text = "${item.count}",
                 color = item.color,
@@ -906,10 +749,10 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
                 lineHeight = 36.sp
             )
 
-            // Bottom colored bar
+            val fraction = (item.count.toFloat() / item.total.toFloat()).coerceIn(0f, 1f)
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(item.count / 7f)
+                    .fillMaxWidth(fraction.coerceAtLeast(0.01f))
                     .fillMaxHeight()
                     .background(
                         color = item.color.copy(alpha = 0.25f),
@@ -919,7 +762,7 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth(item.count.toFloat() / 7f)
+                        .fillMaxWidth(fraction)
                         .background(
                             color = item.color,
                             shape = RoundedCornerShape(1.dp)
@@ -935,137 +778,51 @@ fun StatusSummaryCard(item: StatusSummaryItem) {
 @Composable
 fun PriorityCasualtiesPanel(){
 
-    val casualties by AppState.casualties
-
-
-
-    LaunchedEffect(
-        casualties
-    ){
-
-        AppState.alertCount.value =
-
-            casualties.count{
-
-                it.status == "critical"
-
-            }
-
-
-
-        AppState.criticalCount.value =
-
-            casualties.count{
-
-                it.status == "critical"
-
-            }
-
-    }
-
-
+    val priorityOrder = mapOf("critical" to 0, "serious" to 1, "offline" to 2, "stable" to 3)
+    val casualties = SoldierState.soldiers
+        .filter { it.status != "stable" }
+        .sortedBy { priorityOrder[it.status] ?: 4 }
+        .take(6)
 
     Card(
-
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        colors =
-            CardDefaults.cardColors(
-
-                containerColor =
-                    Color(
-                        0xFF081B33
-                    )
-
-            ),
-
-        shape =
-            RoundedCornerShape(
-                12.dp
-            )
-
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF081B33)),
+        shape = RoundedCornerShape(12.dp)
     ){
-
-        Column(
-
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        16.dp
-                    )
-
-        ){
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)){
 
             Text(
-
-                text =
-                    "PRIORITY CASUALTIES",
-
-                color =
-                    Color.White,
-
-                fontSize =
-                    13.sp,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                letterSpacing =
-                    1.5.sp
-
+                text = "PRIORITY CASUALTIES",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp
             )
 
-            Spacer(
-                Modifier.height(
-                    16.dp
+            Spacer(Modifier.height(16.dp))
+
+            if (casualties.isEmpty()) {
+                Text(
+                    text = "No active casualties",
+                    color = Color(0xFF6B7F99),
+                    fontSize = 13.sp
                 )
-            )
-
-
-
-            casualties.forEach{
-
-                    casualty ->
-
-                CasualtyRow(
-                    casualty
-                )
-
-                Spacer(
-                    Modifier.height(
-                        16.dp
-                    )
-                )
-
+            } else {
+                casualties.forEach { soldier ->
+                    SoldierPriorityRow(soldier)
+                    Spacer(Modifier.height(16.dp))
+                }
             }
-
         }
-
     }
-
 }
 
 
-
-
-// ── Single Casualty Row ───────────────────────────────────────────
+// ── Single Soldier Priority Row ────────────────────────────────────
 @Composable
-fun CasualtyRow(item: CasualtyItem) {
+fun SoldierPriorityRow(soldier: Soldier) {
 
-    val dotColor = when (item.status) {
-        "stable"   -> Color(0xFF00E676)
-        "serious"  -> Color(0xFFFFD600)
-        "critical" -> Color(0xFFFF1744)
-        else       -> Color(0xFF757575)
-    }
-
-    val percentColor = when {
-        item.percent >= 80 -> Color(0xFFFF1744)
-        item.percent >= 40 -> Color(0xFFFFD600)
-        else               -> Color(0xFF00E676)
-    }
+    val dotColor = statusColor(soldier.status)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1074,34 +831,26 @@ fun CasualtyRow(item: CasualtyItem) {
         Box(
             modifier = Modifier
                 .size(14.dp)
-                .background(
-                    color = dotColor,
-                    shape = CircleShape
-                )
+                .background(color = dotColor, shape = CircleShape)
         )
 
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = item.name,
+                text = "${soldier.rankTitle} ${soldier.name}",
                 color = Color.White,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = item.subtitle,
+                text = "${soldier.squad} · ${soldier.role}",
                 color = Color(0xFF6B7F99),
                 fontSize = 12.sp
             )
         }
 
-        Text(
-            text = "${item.percent}%",
-            color = percentColor,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
+        StatusPill(soldier.status)
     }
 }
 
@@ -1110,12 +859,7 @@ fun CasualtyRow(item: CasualtyItem) {
 @Composable
 fun RecentAlertsPanel() {
 
-    val alerts = listOf(
-        AlertItem("Critical Soldier", "Pvt. Ethan Cruz (S-004)",  "critical"),
-        AlertItem("Blast Detected",   "Sgt. Yuki Tanaka (S-005)", "critical"),
-        AlertItem("Sensor Failure",   "Sgt. Yuki Tanaka (S-005)", "serious"),
-        AlertItem("Battery Low",      "Pvt. Ethan Cruz (S-004)",  "serious"),
-    )
+    val alerts = AlertState.alerts.take(6)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1139,28 +883,36 @@ fun RecentAlertsPanel() {
 
             Spacer(Modifier.height(16.dp))
 
-            alerts.forEach { alert ->
-                AlertRow(alert)
-                Spacer(Modifier.height(16.dp))
+            if (alerts.isEmpty()) {
+                Text(
+                    text = "No recent alerts",
+                    color = Color(0xFF6B7F99),
+                    fontSize = 13.sp
+                )
+            } else {
+                alerts.forEach { alert ->
+                    AppAlertRow(alert)
+                    Spacer(Modifier.height(16.dp))
+                }
             }
         }
     }
 }
 
 
-// ── Single Alert Row ──────────────────────────────────────────────
+// ── Single Alert Row (renders a real AppAlert from AlertState) ────
 @Composable
-fun AlertRow(item: AlertItem) {
+fun AppAlertRow(item: AppAlert) {
 
     val dotColor = when (item.severity) {
         "critical" -> Color(0xFFFF1744)
-        "serious"  -> Color(0xFFFFD600)
+        "serious", "warning" -> Color(0xFFFFD600)
         else       -> Color(0xFF00E676)
     }
 
     val titleColor = when (item.severity) {
         "critical" -> Color(0xFFFF5252)
-        "serious"  -> Color(0xFFFFD600)
+        "serious", "warning" -> Color(0xFFFFD600)
         else       -> Color(0xFF00E676)
     }
 
@@ -1184,7 +936,7 @@ fun AlertRow(item: AlertItem) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = item.subtitle,
+                text = "${item.soldierName} (${item.soldierSerial})",
                 color = Color(0xFF6B7F99),
                 fontSize = 12.sp
             )
@@ -1311,23 +1063,10 @@ fun SidePanel(){
 
 
 // ── Data Classes ──────────────────────────────────────────────────
-data class CasualtyItem(
-    val name: String,
-    val subtitle: String,
-    val status: String,
-    val percent: Int
-)
-
-data class AlertItem(
-    val title: String,
-    val subtitle: String,
-    val severity: String
-)
-
-// ── ADD THIS ──────────────────────────────────────────────────────
 data class StatusSummaryItem(
     val label: String,
     val count: Int,
     val color: Color,
-    val icon: ImageVector
+    val icon: ImageVector,
+    val total: Int = 1
 )

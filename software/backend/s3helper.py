@@ -1,37 +1,21 @@
-import os
+import boto3
+from botocore.exceptions import ClientError
 import uuid
-
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-except Exception:  # pragma: no cover - optional dependency for local/dev
-    boto3 = None
-    ClientError = Exception
-
+import os
 from config import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     AWS_REGION,
-    S3_BUCKET_NAME,
+    S3_BUCKET_NAME
 )
 
 # ── S3 client ─────────────────────────────────────────────────────
-s3_client = None
-if boto3 is not None:
-    try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION
-        )
-    except Exception:
-        s3_client = None
-
-
-def _require_s3() -> None:
-    if s3_client is None:
-        raise RuntimeError("S3 is not configured for this backend instance")
+s3_client = boto3.client(
+    "s3",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
 
 
 def upload_photo(file_bytes: bytes, content_type: str, soldier_id: str) -> str:
@@ -39,7 +23,6 @@ def upload_photo(file_bytes: bytes, content_type: str, soldier_id: str) -> str:
     Uploads a photo to S3.
     Returns the S3 key (not a public URL — we use presigned URLs).
     """
-    _require_s3()
     ext = content_type.split("/")[-1]   # e.g. "image/jpeg" → "jpeg"
     key = f"soldiers/{soldier_id}/photo.{ext}"
 
@@ -57,7 +40,6 @@ def upload_photo(file_bytes: bytes, content_type: str, soldier_id: str) -> str:
 
 def delete_photo(s3_key: str):
     """Deletes a photo from S3 by its key."""
-    _require_s3()
     try:
         s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
     except ClientError as e:
@@ -70,7 +52,6 @@ def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
     expires_in = seconds until URL expires (default 1 hour).
     The Android app uses this URL to display the image.
     """
-    _require_s3()
     try:
         url = s3_client.generate_presigned_url(
             "get_object",
@@ -87,8 +68,6 @@ def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
 
 def photo_exists(s3_key: str) -> bool:
     """Check if a photo exists in S3."""
-    if s3_client is None:
-        return False
     try:
         s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
         return True

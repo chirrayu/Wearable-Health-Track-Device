@@ -1,74 +1,128 @@
-#WebSocket server so the Android app gets live updates 
-#(vitals, alerts, map positions) pushed to it instead of polling every few seconds.
+# WebSocket server so the Android app gets live updates 
+# (vitals, alerts, map positions) pushed to it instead of polling every few seconds.
+# Also handles direct ESP32 Wi-Fi connections and BLE telemetry forwarding.
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
-from typing import Dict, List
+from typing import Dict, List, Optional
 import asyncio
 import json
 from datetime import datetime
 
-from database import get_db, SoldierModel, VitalsModel, LocationModel, AlertModel
+from database import get_db, SessionLocal, SoldierModel, VitalsModel, LocationModel, AlertModel, ESP32DeviceModel
 from sqlalchemy import desc
 
 router = APIRouter()
 
 
-# ── Connection manager ────────────────────────────────────────────
-# Keeps track of all active WebSocket connections.
-# Each client (Android app) connects once and stays connected.
-# Server pushes updates to all connected clients instantly.
-
-class ConnectionManager:
-
+# ── ESP32 Device Manager ──────────────────────────────────────────
+# Tracks active ESP32 WebSocket connections in memory and syncs state to the DB.
+class ESP32Manager:
     def __init__(self):
-        # All active connections
-        self.active: List[WebSocket] = []
+        # device_id -> {"mode": "wifi"|"ble", "last_seen": datetime, "battery": int, "ws": Optional[WebSocket], "status": str}
+        self.devices: Dict[str, dict] = {}
 
-        # Connections grouped by type so you can push
-        # only to clients that care about a specific feed.
+    def register_device(self, device_id: str, mode: str = "wifi", ws: Optional[WebSocket] = None):
+        self.devices[device_id] = {
+            "mode": mode,
+            "last_seen": datetime.utcnow(),
+            "battery": 100,
+            "ws": ws,
+            "status": "online"
+        }
+        self._sync_to_db(device_id, mode)
+
+    def update_device(self, device_id: str, data: dict):
+        if device_id in self.devices:
+            self.devices[device_id]["last_seen"] = datetime.utcnow()
+            if "battery" in data:
+                self.devices[device_id]["battery"] = data["battery"]
+            if "mode" in data:
+                self.devices[device_id]["mode"] = data["mode"]
+        else:
+            self.register_device(device_id, mode=data.get("mode", "unknown"))
+            self.update_device(device_id, data)
+
+    def switch_mode(self, device_id: str, new_mode: str):
+        if device_id in self.devices:
+            self.devices[device_id]["mode"] = new_mode
+            self.devices[device_id]["last_seen"] = datetime.utcnow()
+            self._sync_to_db(device_id, new_mode)
+            return True
+        return False
+
+    def mark_offline(self, device_id: str):
+        if device_id in self.devices:
+            self.devices[device_id]["status"] = "offline"
+            self.devices[device_id]["ws"] = None
+            self._sync_to_db(device_id, self.devices[device_id]["mode"], status="offline")
+
+    def get_all_devices(self):
+        return self.devices
+
+    def _sync_to_db(self, device_id: str, mode: str, status: str = "online"):
+        """Persists ESP32 device state to the database."""
+        db = SessionLocal()
+        try:
+            device = db.query(ESP32DeviceModel).filter(ESP32DeviceModel.device_id == device_id).first()
+            if not device:
+                device = ESP32DeviceModel(device_id=device_id, connection_mode=mode, status=status)
+                db.add(device)
+            else:
+                device.connection_mode = mode
+                device.status = status
+                device.last_seen = datetime.utcnow()
+            db.commit()
+        except Exception as e:
+            print(f"DB sync error for ESP32 {device_id}: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+esp32_manager = ESP32Manager()
+
+
+# ── Connection manager (Android App Clients) ──────────────────────
+class ConnectionManager:
+    def __init__(self):
+        self.active: List[WebSocket] = []
         self.subscriptions: Dict[str, List[WebSocket]] = {
-            "vitals":   [],
-            "alerts":   [],
-            "map":      [],
-            "all":      []
+            "vitals": [],
+            "alerts": [],
+            "map": [],
+            "all": []
         }
 
     async def connect(self, websocket: WebSocket, feed: str = "all"):
         await websocket.accept()
         self.active.append(websocket)
-
         if feed in self.subscriptions:
             self.subscriptions[feed].append(websocket)
         else:
             self.subscriptions["all"].append(websocket)
-
         print(f"WS client connected — feed: {feed} | total: {len(self.active)}")
 
     def disconnect(self, websocket: WebSocket):
-        self.active.remove(websocket)
+        if websocket in self.active:
+            self.active.remove(websocket)
         for feed_list in self.subscriptions.values():
             if websocket in feed_list:
                 feed_list.remove(websocket)
         print(f"WS client disconnected | total: {len(self.active)}")
 
     async def push(self, message: dict, feed: str = "all"):
-        """Push a message to all clients subscribed to a feed."""
         targets = self.subscriptions.get(feed, []) + self.subscriptions["all"]
-        targets = list(set(targets))  # deduplicate
-
+        targets = list(set(targets))
         dead = []
         for ws in targets:
             try:
                 await ws.send_text(json.dumps(message, default=str))
             except Exception:
                 dead.append(ws)
-
-        # Clean up dead connections
         for ws in dead:
             self.disconnect(ws)
 
     async def push_to_all(self, message: dict):
-        """Push to every connected client regardless of subscription."""
         dead = []
         for ws in self.active:
             try:
@@ -77,7 +131,6 @@ class ConnectionManager:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
-
 
 manager = ConnectionManager()
 
@@ -88,14 +141,9 @@ def build_vitals_message(soldier_id: str, db: Session) -> dict:
         .filter(VitalsModel.soldier_id == soldier_id)\
         .order_by(desc(VitalsModel.recorded_at))\
         .first()
-
-    soldier = db.query(SoldierModel)\
-        .filter(SoldierModel.id == soldier_id)\
-        .first()
-
+    soldier = db.query(SoldierModel).filter(SoldierModel.id == soldier_id).first()
     if not vitals or not soldier:
         return {}
-
     return {
         "type": "vitals_update",
         "soldier_id": soldier_id,
@@ -109,20 +157,14 @@ def build_vitals_message(soldier_id: str, db: Session) -> dict:
         "timestamp": vitals.recorded_at.isoformat()
     }
 
-
 def build_location_message(soldier_id: str, db: Session) -> dict:
     location = db.query(LocationModel)\
         .filter(LocationModel.soldier_id == soldier_id)\
         .order_by(desc(LocationModel.recorded_at))\
         .first()
-
-    soldier = db.query(SoldierModel)\
-        .filter(SoldierModel.id == soldier_id)\
-        .first()
-
+    soldier = db.query(SoldierModel).filter(SoldierModel.id == soldier_id).first()
     if not location or not soldier:
         return {}
-
     return {
         "type": "location_update",
         "soldier_id": soldier_id,
@@ -134,12 +176,8 @@ def build_location_message(soldier_id: str, db: Session) -> dict:
         "timestamp": location.recorded_at.isoformat()
     }
 
-
 def build_alert_message(alert: AlertModel, db: Session) -> dict:
-    soldier = db.query(SoldierModel)\
-        .filter(SoldierModel.id == alert.soldier_id)\
-        .first()
-
+    soldier = db.query(SoldierModel).filter(SoldierModel.id == alert.soldier_id).first()
     return {
         "type": "new_alert",
         "alert_id": alert.id,
@@ -153,27 +191,18 @@ def build_alert_message(alert: AlertModel, db: Session) -> dict:
         "timestamp": alert.created_at.isoformat()
     }
 
-
 def build_full_snapshot(db: Session) -> dict:
-    """
-    Full state snapshot — sent to a client the moment they connect
-    so they immediately have current data without waiting for the
-    next update cycle.
-    """
     soldiers = db.query(SoldierModel).all()
     soldier_data = []
-
     for soldier in soldiers:
         vitals = db.query(VitalsModel)\
             .filter(VitalsModel.soldier_id == soldier.id)\
             .order_by(desc(VitalsModel.recorded_at))\
             .first()
-
         location = db.query(LocationModel)\
             .filter(LocationModel.soldier_id == soldier.id)\
             .order_by(desc(LocationModel.recorded_at))\
             .first()
-
         soldier_data.append({
             "soldier_id": soldier.id,
             "name": f"{soldier.rank_title} {soldier.name}",
@@ -188,10 +217,17 @@ def build_full_snapshot(db: Session) -> dict:
             "longitude": location.longitude if location else None,
         })
 
-    recent_alerts = db.query(AlertModel)\
-        .order_by(desc(AlertModel.created_at))\
-        .limit(20)\
-        .all()
+    recent_alerts = db.query(AlertModel).order_by(desc(AlertModel.created_at)).limit(20).all()
+
+    # Include ESP32 device statuses in the snapshot
+    esp32_devices_status = {}
+    for dev_id, info in esp32_manager.get_all_devices().items():
+        esp32_devices_status[dev_id] = {
+            "mode": info["mode"],
+            "status": info["status"],
+            "battery": info["battery"],
+            "last_seen": info["last_seen"].isoformat()
+        }
 
     return {
         "type": "snapshot",
@@ -201,65 +237,65 @@ def build_full_snapshot(db: Session) -> dict:
             "warning":  db.query(AlertModel).filter(AlertModel.severity == "warning").count(),
             "total":    db.query(AlertModel).count()
         },
+        "esp32_devices": esp32_devices_status,
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
 # ── WebSocket endpoints ───────────────────────────────────────────
 
-# ws://yourserver:8000/ws/connect?feed=all
-# feed options: "all" | "vitals" | "alerts" | "map"
 @router.websocket("/connect")
-async def websocket_connect(
-    websocket: WebSocket,
-    feed: str = "all"
-):
-    # NOTE: This session is held for the entire lifetime of the WebSocket
-    # connection rather than per-message. For long-lived connections (hours)
-    # this means one DB connection is tied up per client and reads may see
-    # stale SQLAlchemy-level caches. This is acceptable here because the
-    # socket's job is to *receive* pushes (which carry their own fresh db
-    # sessions from the originating route), not to make frequent independent
-    # queries. The snapshot on connect and request_snapshot messages are the
-    # only DB reads this handler makes directly.
+async def websocket_connect(websocket: WebSocket, feed: str = "all"):
     db = next(get_db())
-
     await manager.connect(websocket, feed)
 
     try:
-        # Send full snapshot immediately on connect
         snapshot = build_full_snapshot(db)
         await websocket.send_text(json.dumps(snapshot, default=str))
 
-        # Keep connection alive, listen for pings from client
         while True:
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=30.0
-                )
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
                 msg = json.loads(data)
 
-                # Client can send a ping to keep the connection alive
                 if msg.get("type") == "ping":
-                    await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }))
+                    await websocket.send_text(json.dumps({"type": "pong", "timestamp": datetime.utcnow().isoformat()}))
 
-                # Client can request a fresh snapshot
                 elif msg.get("type") == "request_snapshot":
                     snapshot = build_full_snapshot(db)
-                    await websocket.send_text(
-                        json.dumps(snapshot, default=str)
-                    )
+                    await websocket.send_text(json.dumps(snapshot, default=str))
+
+                # Android app forwards BLE telemetry from ESP32
+                elif msg.get("type") == "esp32_ble_telemetry":
+                    device_id = msg.get("device_id")
+                    if device_id:
+                        esp32_manager.update_device(device_id, {**msg.get("data", {}), "mode": "ble"})
+                        # TODO: Call vitals.process_vitals_reading here if you want to save BLE data to DB
+                        await websocket.send_text(json.dumps({"type": "ack", "status": "ble_data_received"}))
+
+                # Admin/App requests ESP32 to switch connection mode
+                elif msg.get("type") == "switch_esp32_mode":
+                    device_id = msg.get("device_id")
+                    new_mode = msg.get("mode")  # "wifi" or "ble"
+                    if device_id and new_mode:
+                        esp32_manager.switch_mode(device_id, new_mode)
+                        
+                        # If ESP32 is currently connected via Wi-Fi WebSocket, tell it to switch
+                        dev = esp32_manager.devices.get(device_id)
+                        if dev and dev["mode"] == "wifi" and dev["ws"]:
+                            try:
+                                await dev["ws"].send_text(json.dumps({"type": "command", "action": "switch_to_ble"}))
+                            except Exception:
+                                pass  # ESP32 might have disconnected
+                        
+                        await websocket.send_text(json.dumps({
+                            "type": "mode_switch_initiated", 
+                            "device_id": device_id, 
+                            "mode": new_mode
+                        }))
 
             except asyncio.TimeoutError:
-                # Send heartbeat to keep connection alive
-                await websocket.send_text(json.dumps({
-                    "type": "heartbeat",
-                    "timestamp": datetime.utcnow().isoformat()
-                }))
+                await websocket.send_text(json.dumps({"type": "heartbeat", "timestamp": datetime.utcnow().isoformat()}))
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -270,25 +306,53 @@ async def websocket_connect(
         db.close()
 
 
-# ── Push functions called from other routes ───────────────────────
-# Import manager in vitals.py and alerts.py to push updates.
+# Dedicated WebSocket endpoint for ESP32 devices (Wi-Fi Mode)
+@router.websocket("/esp32/{device_id}")
+async def esp32_websocket_connect(websocket: WebSocket, device_id: str):
+    """Direct WebSocket connection for ESP32 devices when in Wi-Fi mode."""
+    await websocket.accept()
+    esp32_manager.register_device(device_id, mode="wifi", ws=websocket)
+    print(f"ESP32 device connected via Wi-Fi: {device_id}")
 
+    try:
+        await websocket.send_text(json.dumps({"type": "connected", "device_id": device_id}))
+
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+
+            if msg.get("type") == "telemetry":
+                esp32_manager.update_device(device_id, msg)
+                # TODO: Call vitals.process_vitals_reading here to save Wi-Fi data to DB
+                
+                await websocket.send_text(json.dumps({"type": "ack", "status": "telemetry_received"}))
+                
+            elif msg.get("type") == "command_response":
+                print(f"ESP32 {device_id} acknowledged command: {msg.get('action')}")
+                
+            elif msg.get("type") == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+
+    except WebSocketDisconnect:
+        esp32_manager.mark_offline(device_id)
+        print(f"ESP32 device disconnected: {device_id}")
+    except Exception as e:
+        print(f"ESP32 WebSocket error: {e}")
+        esp32_manager.mark_offline(device_id)
+
+
+# ── Push functions called from other routes ───────────────────────
 async def push_vitals_update(soldier_id: str, db: Session):
-    """Call this from vitals.py after saving a new reading."""
     message = build_vitals_message(soldier_id, db)
     if message:
         await manager.push(message, feed="vitals")
 
-
 async def push_location_update(soldier_id: str, db: Session):
-    """Call this from map_tracking.py after saving a new location."""
     message = build_location_message(soldier_id, db)
     if message:
         await manager.push(message, feed="map")
 
-
 async def push_alert(alert: AlertModel, db: Session):
-    """Call this from alerts.py after creating a new alert."""
     message = build_alert_message(alert, db)
     if message:
         await manager.push(message, feed="alerts")

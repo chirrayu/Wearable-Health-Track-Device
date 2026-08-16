@@ -228,36 +228,30 @@
 
 
     window.updatePosition=function(id,lat,lng){
-    // If marker already exists, just move it
-    if (markers[id]) {
-        markers[id].setLatLng([lat, lng]);
-    } else {
-        // Create a new marker with a default (stable) icon
-        var newMarker = L.marker([lat, lng], {
-            icon: createDotIcon('stable'),
-            draggable: true
-        }).addTo(map);
-        newMarker.bindPopup('<b>Unknown</b><br>' + id);
-        markers[id] = newMarker;
+
+    if(markers[id]){
+
+    markers[id].setLatLng([lat,lng]);
+
     }
-};
+
+    }
 
 
 
     window.updateStatus=function(id,status){
-    // If marker exists, just change its icon
-    if (markers[id]) {
-        markers[id].setIcon(createDotIcon(status));
-    } else {
-        // Create a new marker at a default location (0,0) with the given status
-        var newMarker = L.marker([0, 0], {
-            icon: createDotIcon(status),
-            draggable: true
-        }).addTo(map);
-        newMarker.bindPopup('<b>Unknown</b><br>' + id);
-        markers[id] = newMarker;
+
+    if(markers[id]){
+
+    markers[id].setIcon(
+
+    createDotIcon(status)
+
+    );
+
     }
-};
+
+    }
 
 
 

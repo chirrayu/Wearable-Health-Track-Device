@@ -1,15 +1,9 @@
 #Environment variables, secret keys, database URL, FCM credentials, sampling rate defaults — one place for all settings.
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    def load_dotenv(path=None):
-        """Fallback no-op load_dotenv when python-dotenv is unavailable."""
-        return None
+from dotenv import load_dotenv
 import os
 import json
 import tempfile
-from urllib.parse import urlparse, urlunparse
 
 # Load .env or photo.env (whichever exists)
 if os.path.exists(".env"):
@@ -20,21 +14,8 @@ else:
     load_dotenv()  # still picks up actual env vars on Render
 
 # ── Database ──────────────────────────────────────────────────────
-def normalize_database_url(raw_url: str | None) -> str:
-    if not raw_url:
-        return "sqlite:///./triage_ai.db"
-
-    if raw_url.startswith("postgres://"):
-        parsed = urlparse(raw_url)
-        return urlunparse(parsed._replace(scheme="postgresql+psycopg2"))
-
-    if raw_url.startswith("postgresql://"):
-        return raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-    return raw_url
-
-
-DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./triage_ai.db"))
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./triage_ai.db")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
 
 # ── JWT Auth ──────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "change-this-in-production")
@@ -44,6 +25,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8   # 8 hour sessions
 # ── Admin credentials (change before deployment) ──────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "triage2024")
+
+
+def validate_production_settings() -> None:
+    """Fail closed when a hosted service was started without real secrets."""
+    if ENVIRONMENT != "production":
+        return
+    invalid = []
+    if SECRET_KEY == "change-this-in-production":
+        invalid.append("SECRET_KEY")
+    if ADMIN_USERNAME == "admin":
+        invalid.append("ADMIN_USERNAME")
+    if ADMIN_PASSWORD == "triage2024":
+        invalid.append("ADMIN_PASSWORD")
+    if invalid:
+        raise RuntimeError(
+            "Production settings are unsafe. Set non-default values for: "
+            + ", ".join(invalid)
+        )
 
 # ── Firebase (for push notifications) ────────────────────────────
 # On Render you can't upload files, so pass the entire service-account
@@ -63,29 +62,20 @@ else:
         "firebase_credentials.json"
     )
 
-# ── Server & optional AWS configuration ───────────────────────────────────────
-# Core server settings (required)
+# ── Alert thresholds (match your Android rules engine) ───────────
+HR_CRITICAL_THRESHOLD    = int(os.getenv("HR_CRITICAL_THRESHOLD", "130"))
+SPO2_CRITICAL_THRESHOLD  = int(os.getenv("SPO2_CRITICAL_THRESHOLD", "90"))
+TEMP_CRITICAL_THRESHOLD  = float(os.getenv("TEMP_CRITICAL_THRESHOLD", "103.0"))
+NO_MOVEMENT_MINUTES      = int(os.getenv("NO_MOVEMENT_MINUTES", "30"))
+
+# ── Server ────────────────────────────────────────────────────────
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # optional, used for self‑ping
-# Optional AWS S3 configuration – may be omitted in environments without S3 (e.g., Render free tier)
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+
+# ── Render (for self-ping uptime bot) ────────────────────────────
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # auto-set by Render
+# ── AWS S3 ────────────────────────────────────────────────────────
+AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-
-# Exported symbols for explicit imports
-HR_CRITICAL_THRESHOLD = int(os.getenv("HR_CRITICAL_THRESHOLD", "140"))
-SPO2_CRITICAL_THRESHOLD = int(os.getenv("SPO2_CRITICAL_THRESHOLD", "90"))
-TEMP_CRITICAL_THRESHOLD = float(os.getenv("TEMP_CRITICAL_THRESHOLD", "102.0"))
-NO_MOVEMENT_MINUTES = int(os.getenv("NO_MOVEMENT_MINUTES", "30"))
-
-__all__ = [
-    "HOST",
-    "PORT",
-    "RENDER_EXTERNAL_URL",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_REGION",
-    "S3_BUCKET_NAME",
-]
+AWS_REGION            = os.getenv("AWS_REGION", "ap-south-1")
+S3_BUCKET_NAME        = os.getenv("S3_BUCKET_NAME", "triage-ai-photos")

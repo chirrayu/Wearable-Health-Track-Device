@@ -27,7 +27,6 @@ class SoldierCreate(BaseModel):
     role: str
     blood_group: str = "O+"
     status: str = "stable"
-    suit_id: Optional[str] = None
 
 class SoldierUpdate(BaseModel):
     name: Optional[str] = None
@@ -38,7 +37,6 @@ class SoldierUpdate(BaseModel):
     role: Optional[str] = None
     blood_group: Optional[str] = None
     status: Optional[str] = None
-    suit_id: Optional[str] = None
 
 class SoldierOut(BaseModel):
     id: str
@@ -46,10 +44,9 @@ class SoldierOut(BaseModel):
     rank_title: str
     rank_order: int
     serial: str
-    suit_id: Optional[str] = None
     squad_id: Optional[str]
     squad_name: Optional[str]
-    role: Optional[str] = "Infantry"
+    role: str
     blood_group: str
     status: str
     photo_url: Optional[str]
@@ -57,11 +54,6 @@ class SoldierOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-class PairSuitIn(BaseModel):
-    suit_id: str
-    soldier_id: Optional[str] = None
-    new_soldier: Optional[SoldierCreate] = None
 
 
 # ── Helper ────────────────────────────────────────────────────────
@@ -80,10 +72,9 @@ def soldier_to_out(soldier: SoldierModel) -> SoldierOut:
         rank_title=soldier.rank_title,
         rank_order=soldier.rank_order,
         serial=soldier.serial,
-        suit_id=soldier.suit_id,
         squad_id=soldier.squad_id,
         squad_name=soldier.squad_rel.name if soldier.squad_rel else None,
-        role=soldier.role or "Infantry",
+        role=soldier.role,
         blood_group=soldier.blood_group,
         status=soldier.status,
         photo_url=photo_url,
@@ -128,19 +119,12 @@ def create_soldier(
     admin=Depends(get_current_admin)
 ):
     # Check serial is unique
-    if db.query(SoldierModel).filter(SoldierModel.serial == body.serial.strip().upper()).first():
+    if db.query(SoldierModel).filter(SoldierModel.serial == body.serial).first():
         raise HTTPException(status_code=400, detail="Serial number already exists")
 
     # Check squad exists
     if not db.query(Squad).filter(Squad.id == body.squad_id).first():
         raise HTTPException(status_code=404, detail="Squad not found")
-
-    suit_id_val = body.suit_id.strip().upper() if body.suit_id else None
-    if suit_id_val:
-        # Unassign suit from previous holder if any
-        prev_owner = db.query(SoldierModel).filter(SoldierModel.suit_id == suit_id_val).first()
-        if prev_owner:
-            prev_owner.suit_id = None
 
     soldier = SoldierModel(
         id=str(uuid.uuid4()),
@@ -148,7 +132,6 @@ def create_soldier(
         rank_title=body.rank_title.strip(),
         rank_order=body.rank_order,
         serial=body.serial.strip().upper(),
-        suit_id=suit_id_val,
         squad_id=body.squad_id,
         role=body.role.strip(),
         blood_group=body.blood_group,
@@ -160,78 +143,6 @@ def create_soldier(
     config = SuitConfigModel(soldier_id=soldier.id)
     db.add(config)
 
-    db.commit()
-    db.refresh(soldier)
-    return soldier_to_out(soldier)
-
-
-# POST /soldiers/pair-suit — register / assign suit ID to soldier
-@router.post("/pair-suit", response_model=SoldierOut)
-def pair_suit(
-    body: PairSuitIn,
-    db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
-    suit_id_clean = body.suit_id.strip().upper()
-    if not suit_id_clean:
-        raise HTTPException(status_code=400, detail="Suit ID is required")
-
-    # Clear suit_id from any existing soldier to enforce uniqueness
-    prev_holder = db.query(SoldierModel).filter(SoldierModel.suit_id == suit_id_clean).first()
-    if prev_holder:
-        prev_holder.suit_id = None
-
-    soldier = None
-    if body.soldier_id:
-        from database import get_soldier_by_ref
-        soldier = get_soldier_by_ref(db, body.soldier_id)
-        if not soldier:
-            raise HTTPException(status_code=404, detail="Soldier not found")
-        soldier.suit_id = suit_id_clean
-    elif body.new_soldier:
-        # Create new soldier
-        ns = body.new_soldier
-        if db.query(SoldierModel).filter(SoldierModel.serial == ns.serial.strip().upper()).first():
-            raise HTTPException(status_code=400, detail="Serial number already exists")
-        if not db.query(Squad).filter(Squad.id == ns.squad_id).first():
-            raise HTTPException(status_code=404, detail="Squad not found")
-
-        soldier = SoldierModel(
-            id=str(uuid.uuid4()),
-            name=ns.name.strip(),
-            rank_title=ns.rank_title.strip(),
-            rank_order=ns.rank_order,
-            serial=ns.serial.strip().upper(),
-            suit_id=suit_id_clean,
-            squad_id=ns.squad_id,
-            role=ns.role.strip(),
-            blood_group=ns.blood_group,
-            status=ns.status
-        )
-        db.add(soldier)
-        config = SuitConfigModel(soldier_id=soldier.id)
-        db.add(config)
-    else:
-        raise HTTPException(status_code=400, detail="Must provide either soldier_id or new_soldier")
-
-    db.commit()
-    db.refresh(soldier)
-    return soldier_to_out(soldier)
-
-
-# POST /soldiers/{soldier_id}/unpair-suit — unassign suit from soldier
-@router.post("/{soldier_id}/unpair-suit", response_model=SoldierOut)
-def unpair_suit(
-    soldier_id: str,
-    db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
-    from database import get_soldier_by_ref
-    soldier = get_soldier_by_ref(db, soldier_id)
-    if not soldier:
-        raise HTTPException(status_code=404, detail="Soldier not found")
-
-    soldier.suit_id = None
     db.commit()
     db.refresh(soldier)
     return soldier_to_out(soldier)
@@ -255,14 +166,6 @@ def update_soldier(
     if body.role is not None:        soldier.role = body.role.strip()
     if body.blood_group is not None: soldier.blood_group = body.blood_group
     if body.status is not None:      soldier.status = body.status
-
-    if body.suit_id is not None:
-        val = body.suit_id.strip().upper() if body.suit_id else None
-        if val:
-            prev = db.query(SoldierModel).filter(SoldierModel.suit_id == val, SoldierModel.id != soldier_id).first()
-            if prev:
-                prev.suit_id = None
-        soldier.suit_id = val
 
     if body.serial is not None:
         duplicate = db.query(SoldierModel).filter(
