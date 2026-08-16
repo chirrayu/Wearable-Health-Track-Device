@@ -1,5 +1,5 @@
-#Your database models and connection setup (SQLite for simple start, PostgreSQL for production).
-#All other files import from here.
+# Your database models and connection setup (SQLite for simple start, PostgreSQL for production).
+# All other files import from here.
 
 from sqlalchemy import (
     create_engine, Column, String, Integer,
@@ -21,7 +21,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-# ── Models ────────────────────────────────────────────────────────
+# ── Models ───────────────────────────────────────────────────────
 
 class Squad(Base):
     __tablename__ = "squads"
@@ -41,7 +41,6 @@ class SoldierModel(Base):
     rank_title  = Column(String, nullable=False)
     rank_order  = Column(Integer, nullable=False)
     serial      = Column(String, unique=True, nullable=False)
-    suit_id     = Column(String, unique=True, nullable=True)
     squad_id    = Column(String, ForeignKey("squads.id"))
     role        = Column(String)
     blood_group = Column(String, default="O+")
@@ -54,6 +53,9 @@ class SoldierModel(Base):
     alerts      = relationship("AlertModel", back_populates="soldier")
     location    = relationship("LocationModel", back_populates="soldier")
     suit_config = relationship("SuitConfigModel", back_populates="soldier", uselist=False)
+    
+    # ⚠ NEW — Link to the physical ESP32 device assigned to this soldier
+    esp32_devices = relationship("ESP32DeviceModel", back_populates="soldier")
 
 
 class VitalsModel(Base):
@@ -67,15 +69,17 @@ class VitalsModel(Base):
     battery     = Column(Integer, nullable=True)
     recorded_at = Column(DateTime, default=datetime.utcnow)
 
-    # ⚠ NEW — required by vitals.py's ingest endpoint and triage.py's
-    # calculate_score(). Without these, vitals.py raises a TypeError the
-    # moment a request with the new fields comes in.
-    activity_index   = Column(Integer, nullable=True)   # 0-3, from firmware's accelerometer sampling
-    respiratory_rate  = Column(Integer, nullable=True)   # breaths/min — no sensor yet, always None for now
-    blast_severity    = Column(Float, nullable=True)     # 0.0-0.5, set by blast.compute_blast_severity()
-    blast_timestamp   = Column(DateTime, nullable=True)  # when a blast-magnitude spike was detected
-    score             = Column(Float, nullable=True)     # TA-CSS score set by triage.calculate_score()
-    classification    = Column(String, nullable=True)    # "Stable" / "Serious" / "Critical"
+    # Existing extended fields
+    activity_index   = Column(Integer, nullable=True)
+    respiratory_rate = Column(Integer, nullable=True)
+    blast_severity   = Column(Float, nullable=True)
+    blast_timestamp  = Column(DateTime, nullable=True)
+    score            = Column(Float, nullable=True)
+    classification   = Column(String, nullable=True)
+
+    #  NEW — ESP32 tracking fields (populated by vitals.py process_vitals_reading)
+    device_id        = Column(String, nullable=True)   # e.g., ESP32 MAC address or UUID
+    connection_type  = Column(String, nullable=True)   # "wifi", "ble", or "suit"
 
     soldier = relationship("SoldierModel", back_populates="vitals")
 
@@ -132,106 +136,32 @@ class AdminCredential(Base):
     password_hash = Column(String, nullable=False)
 
 
+# ⚠ NEW — Tracks the physical ESP32 hardware state
+class ESP32DeviceModel(Base):
+    __tablename__ = "esp32_devices"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    device_id       = Column(String, unique=True, nullable=False)  # ESP32 generated UUID or MAC
+    soldier_id      = Column(String, ForeignKey("soldiers.id"), nullable=True)
+    
+    mac_address     = Column(String, unique=True, nullable=True)
+    name            = Column(String, nullable=True)                # e.g., "ESP32-Alpha"
+    
+    connection_mode = Column(String, default="wifi")               # "wifi" or "ble"
+    status          = Column(String, default="offline")            # "online", "offline", "pairing"
+    
+    battery_level   = Column(Integer, nullable=True)
+    signal_strength = Column(Integer, nullable=True)               # RSSI
+    
+    last_seen       = Column(DateTime, default=datetime.utcnow)
+    created_at      = Column(DateTime, default=datetime.utcnow)
+
+    soldier = relationship("SoldierModel", back_populates="esp32_devices")
+
 
 # ── DB init helper ────────────────────────────────────────────────
-def _add_column_if_missing(conn, table: str, column: str, col_type: str):
-    """Attempt to ADD a column; silently ignore if it already exists."""
-    from sqlalchemy import text
-    try:
-        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-        conn.commit()
-        print(f"  [OK] Added missing column {table}.{column}")
-    except Exception:
-        conn.rollback()  # column already exists — nothing to do
-
-
-def _auto_migrate(engine):
-    """Add any columns that exist in the ORM models but are missing from
-    the live database.  This keeps Render's PostgreSQL (and local SQLite)
-    in sync without a full Alembic setup."""
-    with engine.connect() as conn:
-        # ── soldiers table ────────────────────────────────────────
-        _add_column_if_missing(conn, "soldiers", "suit_id", "VARCHAR UNIQUE")
-        _add_column_if_missing(conn, "soldiers", "photo_path", "VARCHAR")
-        # ── vitals table ──────────────────────────────────────────
-        _add_column_if_missing(conn, "vitals", "activity_index", "INTEGER")
-        _add_column_if_missing(conn, "vitals", "respiratory_rate", "INTEGER")
-        _add_column_if_missing(conn, "vitals", "blast_severity", "FLOAT")
-        _add_column_if_missing(conn, "vitals", "blast_timestamp", "TIMESTAMP")
-        _add_column_if_missing(conn, "vitals", "score", "FLOAT")
-        _add_column_if_missing(conn, "vitals", "classification", "VARCHAR")
-
-
 def init_db():
-    from passlib.context import CryptContext
-    from config import ADMIN_PASSWORD
-    
     Base.metadata.create_all(bind=engine)
-    _auto_migrate(engine)
-
-    db = SessionLocal()
-    try:
-        # Always ensure admin credential matches current ADMIN_PASSWORD env var
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        password_hash = pwd_context.hash(ADMIN_PASSWORD)
-        
-        admin_cred = db.query(AdminCredential).filter(AdminCredential.id == "admin").first()
-        if admin_cred:
-            # Update existing credential with current password
-            admin_cred.password_hash = password_hash
-            db.commit()
-            print("[OK] Admin credential updated with ADMIN_PASSWORD from config")
-        else:
-            # Create new credential
-            admin_cred = AdminCredential(
-                id="admin",
-                password_hash=password_hash
-            )
-            db.add(admin_cred)
-            db.commit()
-            print("[OK] Admin credential created with ADMIN_PASSWORD from config")
-        
-        # Seed demo soldier if no soldiers exist yet
-        if db.query(SoldierModel).first():
-            return
-
-        squad = db.query(Squad).filter(Squad.name == "Alpha").first()
-        if not squad:
-            squad = Squad(id="squad-alpha", name="Alpha")
-            db.add(squad)
-            db.flush()
-
-        demo_soldier = SoldierModel(
-            id="soldier-demo-001",
-            name="Demo Soldier",
-            rank_title="Pvt",
-            rank_order=1,
-            serial="SOLDIER-001",
-            suit_id="SUIT-001",
-            squad_id=squad.id,
-            status="stable",
-        )
-        db.add(demo_soldier)
-        db.commit()
-    finally:
-        db.close()
-
-
-def get_soldier_by_ref(db, soldier_ref: str):
-    """Resolve a soldier from either the internal DB id, public serial number, or assigned suit_id."""
-    if not soldier_ref:
-        return None
-    ref_upper = soldier_ref.upper()
-    return (
-        db.query(SoldierModel)
-        .filter(
-            (SoldierModel.id == soldier_ref)
-            | (SoldierModel.serial == ref_upper)
-            | (SoldierModel.suit_id == soldier_ref)
-            | (SoldierModel.suit_id == ref_upper)
-        )
-        .first()
-    )
 
 
 # ── Dependency for FastAPI routes ─────────────────────────────────

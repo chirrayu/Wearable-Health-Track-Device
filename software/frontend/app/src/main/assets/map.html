@@ -13,7 +13,6 @@
         body { height: 100%; background-color: #07111F; }
         #map { width: 100%; height: 100%; min-height: 400px; }
 
-        /* Legend */
         .legend {
             position: absolute;
             bottom: 20px;
@@ -43,7 +42,6 @@
             border-radius: 50%;
         }
 
-        /* LIVE badge */
         .live-badge {
             position: absolute;
             top: 10px;
@@ -60,7 +58,6 @@
             letter-spacing: 1px;
         }
 
-        /* Title */
         .map-title {
             position: absolute;
             top: 12px;
@@ -73,7 +70,6 @@
             letter-spacing: 1px;
         }
 
-        /* Dot styles */
         .dot {
             width: 18px;
             height: 18px;
@@ -92,31 +88,25 @@
 
 <div id="map"></div>
 
-<!-- Overlays -->
 <div class="map-title">BATTLEFIELD MAP</div>
 <div class="live-badge">LIVE</div>
 
 <div class="legend">
-    <div class="legend-item">
-        <div class="legend-dot" style="background:#00e676;"></div> Stable
-    </div>
-    <div class="legend-item">
-        <div class="legend-dot" style="background:#ffd600;"></div> Serious
-    </div>
-    <div class="legend-item">
-        <div class="legend-dot" style="background:#ff1744;"></div> Critical
-    </div>
-    <div class="legend-item">
-        <div class="legend-dot" style="background:#757575;"></div> Offline
-    </div>
+    <div class="legend-item"><div class="legend-dot" style="background:#00e676;"></div> Stable</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ffd600;"></div> Serious</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ff1744;"></div> Critical</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#757575;"></div> Offline</div>
 </div>
 
 <script>
 
-    // ─── Map Setup ───────────────────────────────────────────
+    // ⚠ CHANGED — previously hardcoded to New Delhi (28.6139, 77.2090).
+    // Starts as a neutral wide-zoom world view instead; Kotlin calls
+    // centerMap(lat, lng) as soon as the phone's real GPS location is
+    // available, so this never shows a specific city by default.
     var map = L.map('map', {
-        center: [28.6139, 77.2090],
-        zoom: 13,
+        center: [20, 0],
+        zoom: 2,
         zoomControl: true
     });
 
@@ -126,7 +116,6 @@
     ).addTo(map);
 
 
-    // ─── Dot Icon Factory ────────────────────────────────────
     function createDotIcon(status) {
         var colors = {
             stable:   '#00e676',
@@ -134,9 +123,7 @@
             critical: '#ff1744',
             offline:  '#757575'
         };
-
         var color = colors[status] || '#ffffff';
-
         return L.divIcon({
             className: '',
             html:
@@ -154,66 +141,56 @@
         });
     }
 
-
-    // ─── People Data ─────────────────────────────────────────
-    var people = [
-        { id: 'P1', name: 'Soldier Alpha',   status: 'stable',   lat: 28.6200, lng: 77.2100 },
-        { id: 'P2', name: 'Soldier Bravo',   status: 'stable',   lat: 28.6150, lng: 77.2200 },
-        { id: 'P3', name: 'Soldier Charlie', status: 'stable',   lat: 28.6180, lng: 77.2000 },
-        { id: 'P4', name: 'Soldier Delta',   status: 'serious',  lat: 28.6100, lng: 77.2300 },
-        { id: 'P5', name: 'Soldier Echo',    status: 'serious',  lat: 28.6050, lng: 77.2150 },
-        { id: 'P6', name: 'Soldier Foxtrot', status: 'critical', lat: 28.6120, lng: 77.2250 },
-        { id: 'P7', name: 'Soldier Golf',    status: 'offline',  lat: 28.6080, lng: 77.1950 },
-        { id: 'P8', name: 'Soldier Hotel',   status: 'stable',   lat: 28.6220, lng: 77.2350 }
-    ];
-
-
-    // ─── Create Markers ──────────────────────────────────────
+    // ⚠ CHANGED — previously seeded with 8 hardcoded fake soldiers
+    // (Alpha through Hotel) scattered around Delhi. Starts empty now —
+    // real markers are created on demand by upsertMarker() below, called
+    // from Kotlin whenever a real "location_update" arrives over the
+    // WebSocket for an actual soldier_id.
     var markers = {};
 
-    people.forEach(function(person) {
-        var marker = L.marker(
-            [person.lat, person.lng],
-            {
-                icon: createDotIcon(person.status),
-                draggable: true           // ← makes dots moveable
-            }
-        ).addTo(map);
-
-        marker.bindPopup(
-            '<b>' + person.name + '</b><br>' +
-            'Status: ' + person.status.toUpperCase() +
-            '<br>ID: ' + person.id
-        );
-
-        // Save new position when dragged
-        marker.on('dragend', function(e) {
-            var pos = e.target.getLatLng();
-            console.log(
-                person.id + ' moved to ' +
-                pos.lat.toFixed(5) + ', ' + pos.lng.toFixed(5)
+    // ⚠ NEW — creates a marker the first time we hear about a soldier_id,
+    // or updates it if we already have one. This replaces the old
+    // approach of pre-seeding a fixed list of fake people.
+    function upsertMarker(id, name, status, lat, lng) {
+        if (markers[id]) {
+            markers[id].setLatLng([lat, lng]);
+            markers[id].setIcon(createDotIcon(status));
+            markers[id].setPopupContent(
+                '<b>' + name + '</b><br>Status: ' + status.toUpperCase() + '<br>ID: ' + id
             );
-        });
+        } else {
+            var marker = L.marker([lat, lng], { icon: createDotIcon(status) }).addTo(map);
+            marker.bindPopup(
+                '<b>' + name + '</b><br>Status: ' + status.toUpperCase() + '<br>ID: ' + id
+            );
+            markers[id] = marker;
+        }
+    }
 
-        markers[person.id] = marker;
-    });
-
-
-    // ─── Update a person's position from Kotlin ──────────────
-    // Call: updatePosition('P1', 28.6210, 77.2110)
+    // Kept for backward compatibility — only affects markers that
+    // already exist (i.e. created via upsertMarker first).
     function updatePosition(id, lat, lng) {
         if (markers[id]) {
             markers[id].setLatLng([lat, lng]);
         }
     }
 
-    // ─── Update a person's status from Kotlin ────────────────
-    // Call: updateStatus('P1', 'critical')
     function updateStatus(id, status) {
         if (markers[id]) {
             markers[id].setIcon(createDotIcon(status));
         }
     }
+
+    // ⚠ NEW — centers the map on a real coordinate (the phone's actual
+    // GPS position). Called from Kotlin once a location fix is available,
+    // replacing the old hardcoded New Delhi center.
+    function centerMap(lat, lng, zoom) {
+        map.setView([lat, lng], zoom || 15);
+    }
+
+    setTimeout(function() {
+        map.invalidateSize();
+    }, 500);
 
 </script>
 

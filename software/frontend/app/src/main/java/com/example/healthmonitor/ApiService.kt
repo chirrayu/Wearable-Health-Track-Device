@@ -1,6 +1,5 @@
 package com.example.healthmonitor
 
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -86,19 +85,14 @@ object ApiService {
                     .build()
 
                 val response = client.newCall(request).execute()
-                val bodyString = response.body?.string() ?: ""
-                Log.d("ApiService", "Login request URL: ${NetworkConfig.BASE_URL}/auth/login")
-                Log.d("ApiService", "Login response code: ${response.code}")
-                Log.d("ApiService", "Login response body: $bodyString")
                 if (response.isSuccessful) {
-                    val json = JSONObject(bodyString)
+                    val json = JSONObject(response.body!!.string())
                     authToken = json.getString("access_token")
                     true
                 } else {
                     false
                 }
             } catch (e: Exception) {
-                Log.e("ApiService", "Login failed", e)
                 false
             }
         }
@@ -132,64 +126,13 @@ object ApiService {
                             battery    = if (s.isNull("battery")) 0 else s.getInt("battery"),
                             status     = s.getString("status"),
                             bloodGroup = s.optString("blood_group", "O+"),
-                            photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url"),
-                            suitId     = if (s.isNull("suit_id")) null else s.getString("suit_id")
+                            photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url")
                         )
                     )
                 }
                 soldiers
             } catch (e: Exception) {
                 emptyList()
-            }
-        }
-    }
-
-    suspend fun pairSuit(suitId: String, soldierId: String? = null, newSoldier: JSONObject? = null): Soldier? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val body = JSONObject().apply {
-                    put("suit_id", suitId)
-                    soldierId?.let { put("soldier_id", it) }
-                    newSoldier?.let { put("new_soldier", it) }
-                }
-                val response = client.newCall(postRequest("/soldiers/pair-suit", body)).execute()
-                val responseStr = response.body?.string() ?: ""
-                if (response.isSuccessful && responseStr.isNotEmpty()) {
-                    val s = JSONObject(responseStr)
-                    Soldier(
-                        id         = s.getString("id"),
-                        name       = s.getString("name"),
-                        rankTitle  = s.getString("rank_title"),
-                        rankOrder  = s.getInt("rank_order"),
-                        serial     = s.getString("serial"),
-                        squad      = s.optString("squad_name", "Unknown"),
-                        role       = s.optString("role", "Infantry"),
-                        hr         = if (s.isNull("hr")) null else s.getInt("hr"),
-                        spo2       = if (s.isNull("spo2")) null else s.getInt("spo2"),
-                        temp       = if (s.isNull("temp")) null else s.getDouble("temp").toFloat(),
-                        battery    = if (s.isNull("battery")) 0 else s.getInt("battery"),
-                        status     = s.getString("status"),
-                        bloodGroup = s.optString("blood_group", "O+"),
-                        photoUri   = if (s.isNull("photo_url")) null else s.getString("photo_url"),
-                        suitId     = if (s.isNull("suit_id")) null else s.getString("suit_id")
-                    )
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
-                Log.e("ApiService", "pairSuit error: ${e.message}")
-                null
-            }
-        }
-    }
-
-    suspend fun unpairSuit(soldierId: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val response = client.newCall(postRequest("/soldiers/$soldierId/unpair-suit", JSONObject())).execute()
-                response.isSuccessful
-            } catch (e: Exception) {
-                false
             }
         }
     }
@@ -253,7 +196,6 @@ object ApiService {
 
     // ── Squads ────────────────────────────────────────────────────
     suspend fun getSquads(): List<Pair<String, String>> {
-        // Returns list of Pair(id, name)
         return withContext(Dispatchers.IO) {
             try {
                 val response = client.newCall(getRequest("/squads/")).execute()
@@ -274,7 +216,6 @@ object ApiService {
     }
 
     suspend fun createSquad(name: String): String? {
-        // Returns new squad ID or null on failure
         return withContext(Dispatchers.IO) {
             try {
                 val body = JSONObject().apply { put("name", name) }
@@ -322,7 +263,6 @@ object ApiService {
     }
 
     suspend fun getAlertSummary(): Triple<Int, Int, Int> {
-        // Returns Triple(critical, warning, total)
         return withContext(Dispatchers.IO) {
             try {
                 val response = client.newCall(
@@ -387,6 +327,114 @@ object ApiService {
             } catch (e: Exception) {
                 emptyList()
             }
+        }
+    }
+
+
+    // ── Suit Config ───────────────────────────────────────────────
+    // ⚠ NEW — previously SuitConfigState only touched a local in-memory
+    // map (its own file comment said "can be swapped for a real network
+    // call later"). These methods wire it to the real
+    // backend/suit_config.py endpoints instead.
+
+    suspend fun getSuitConfig(soldierId: String): SuitConfig? {
+        return withContext(Dispatchers.IO) {
+            try {
+                var response = client.newCall(getRequest("/suit/$soldierId")).execute()
+                if (response.code == 404) {
+                    // No config row exists yet for this soldier — PUT
+                    // with an empty body makes the backend auto-create
+                    // one using its own defaults (database.py's
+                    // SuitConfigModel column defaults).
+                    response = client.newCall(
+                        putRequest("/suit/$soldierId", JSONObject())
+                    ).execute()
+                }
+                if (!response.isSuccessful) return@withContext null
+                suitConfigFromJson(JSONObject(response.body!!.string()))
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    suspend fun updateSuitConfig(soldierId: String, config: SuitConfig): SuitConfig? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject().apply {
+                    put("hr_sensor", config.hrSensor)
+                    put("spo2_sensor", config.spo2Sensor)
+                    put("temp_sensor", config.tempSensor)
+                    put("accelerometer", config.accelerometer)
+                    put("gps_enabled", config.gpsEnabled)
+                    put("sampling_rate_secs", config.samplingRateSecs)
+                    put("wifi_enabled", config.wifiEnabled)
+                    put("mesh_enabled", config.meshEnabled)
+                    put("radio_gateway", config.radioGateway)
+                    put("emergency_mode", config.emergencyMode)
+                }
+                val response = client.newCall(putRequest("/suit/$soldierId", body)).execute()
+                if (!response.isSuccessful) return@withContext null
+                suitConfigFromJson(JSONObject(response.body!!.string()))
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    suspend fun resetSuitConfig(soldierId: String): SuitConfig? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = client.newCall(
+                    postRequest("/suit/$soldierId/reset", JSONObject())
+                ).execute()
+                if (!response.isSuccessful) return@withContext null
+                suitConfigFromJson(JSONObject(response.body!!.string()))
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    suspend fun setEmergencyMode(soldierId: String, enabled: Boolean): SuitConfig? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject().apply { put("enabled", enabled) }
+                val response = client.newCall(
+                    postRequest("/suit/$soldierId/emergency", body)
+                ).execute()
+                if (!response.isSuccessful) return@withContext null
+                suitConfigFromJson(JSONObject(response.body!!.string()))
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun suitConfigFromJson(json: JSONObject): SuitConfig {
+        return SuitConfig(
+            hrSensor         = json.getBoolean("hr_sensor"),
+            spo2Sensor       = json.getBoolean("spo2_sensor"),
+            tempSensor       = json.getBoolean("temp_sensor"),
+            accelerometer    = json.getBoolean("accelerometer"),
+            gpsEnabled       = json.getBoolean("gps_enabled"),
+            samplingRateSecs = json.getInt("sampling_rate_secs"),
+            wifiEnabled      = json.getBoolean("wifi_enabled"),
+            meshEnabled      = json.getBoolean("mesh_enabled"),
+            radioGateway     = json.getBoolean("radio_gateway"),
+            emergencyMode    = json.getBoolean("emergency_mode"),
+            updatedAt        = parseIsoToMillis(json.optString("updated_at"))
+        )
+    }
+
+    private fun parseIsoToMillis(iso: String): Long {
+        return try {
+            val cleaned = iso.substringBefore(".")
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            sdf.parse(cleaned)?.time ?: System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
         }
     }
 }

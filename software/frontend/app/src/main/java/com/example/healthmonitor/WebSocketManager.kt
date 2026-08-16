@@ -30,11 +30,23 @@ object WebSocketManager {
     private var shouldReconnect = true
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    // ⚠ NEW — tracks the last time we heard ANYTHING back from the server
+    // (a pong reply, or a heartbeat). Without this, killing the server
+    // abruptly leaves isConnected/AppState stuck on "LIVE" indefinitely,
+    // since OkHttp has no way to know the socket died until it tries to
+    // use it again.
+    private var lastPongAt: Long = 0L
+
+    // How long we tolerate silence before declaring the connection dead.
+    // Server pings every 20s, so 45s covers ~2 missed cycles before acting.
+    private const val PONG_TIMEOUT_MS = 45_000L
+
 
     // ── Connect ───────────────────────────────────────────────────
     fun connect(context: Context) {
         shouldReconnect = true
         AppState.connectionStatus.value = "CONNECTING"
+        lastPongAt = System.currentTimeMillis()
 
         val request = Request.Builder()
             .url(NetworkConfig.WS_URL)
@@ -46,16 +58,36 @@ object WebSocketManager {
 
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     isConnected = true
+                    lastPongAt = System.currentTimeMillis()
                     AppState.connectionStatus.value = "LIVE"
                     Log.d(TAG, "Connected to backend")
 
-                    // Ping every 20 seconds to keep connection alive
+                    // Ping every 20 seconds to keep connection alive, and
+                    // verify we're actually still hearing back.
                     scope.launch {
                         while (isConnected) {
                             delay(20_000)
-                            if (isConnected) {
-                                webSocket.send("""{"type":"ping"}""")
+                            if (!isConnected) return@launch
+
+                            // ⚠ NEW — if too long has passed since the last
+                            // pong/heartbeat, the connection is dead even
+                            // though OkHttp hasn't noticed. Force-close it
+                            // so reconnect logic actually kicks in, instead
+                            // of the badge silently staying on "LIVE" forever.
+                            val silence = System.currentTimeMillis() - lastPongAt
+                            if (silence > PONG_TIMEOUT_MS) {
+                                Log.w(TAG, "No pong in ${silence}ms — treating connection as dead")
+                                isConnected = false
+                                AppState.connectionStatus.value = "OFFLINE"
+                                webSocket.cancel()
+                                if (shouldReconnect) {
+                                    delay(2_000)
+                                    connect(context)
+                                }
+                                return@launch
                             }
+
+                            webSocket.send("""{"type":"ping"}""")
                         }
                     }
                 }
@@ -63,6 +95,15 @@ object WebSocketManager {
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     try {
                         val json = JsonParser.parseString(text).asJsonObject
+
+                        // ⚠ NEW — any message from the server (not just a
+                        // pong reply, but also periodic heartbeats) proves
+                        // the connection is genuinely still alive.
+                        val type = json.get("type")?.asString
+                        if (type == "pong" || type == "heartbeat") {
+                            lastPongAt = System.currentTimeMillis()
+                        }
+
                         handleMessage(json)
                     } catch (e: Exception) {
                         Log.e(TAG, "Parse error: ${e.message}")
@@ -283,4 +324,15 @@ data class MapUpdate(
 
 object LiveMapState {
     val pendingMapUpdate = mutableStateOf<MapUpdate?>(null)
+
+    // ⚠ NEW — whichever map WebView (BattlefieldMap or LiveMapScreen) is
+    // currently on screen registers itself here. This is what lets a
+    // single LaunchedEffect push real WebSocket location updates into
+    // whichever map the user is actually looking at.
+    val activeMapWebView = mutableStateOf<android.webkit.WebView?>(null)
+
+    // ⚠ NEW — the phone's own real GPS position (from MainActivity's
+    // FusedLocationProviderClient), used to center the map on load
+    // instead of a hardcoded city.
+    val deviceLocation = mutableStateOf<Pair<Double, Double>?>(null)
 }

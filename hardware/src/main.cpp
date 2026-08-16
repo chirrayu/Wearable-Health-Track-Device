@@ -45,6 +45,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -62,11 +63,23 @@
 #include <DallasTemperature.h>
 #include <TinyGPSPlus.h>
 
+// The ESP32 certificate bundle validates normal public HTTPS certificates
+// (including the certificates used by managed hosts such as Render).  Do not
+// replace this with setInsecure(): health and location data must be protected
+// in transit.
+#if __has_include(<esp_crt_bundle.h>)
+#include <esp_crt_bundle.h>
+#define HAS_CERT_BUNDLE 1
+#else
+#define HAS_CERT_BUNDLE 0
+#endif
+
 // ── User config ─────────────────────────────────────────────────
 #define WIFI_SSID       "YOUR_WIFI_SSID"       // first-boot fallback only
 #define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
 #define BACKEND_HOST    "192.168.1.50"          // first-boot fallback only — app can override over BLE
 #define BACKEND_PORT    8000                    // first-boot fallback only — app can override over BLE
+#define BACKEND_SCHEME  "http"                  // use "https" for a public deployment
 #define SOLDIER_ID      "SOLDIER-001"           // first-boot fallback only — app can override over BLE; must match an existing SoldierModel.id in the DB
 
 #define POST_INTERVAL_MS       5000
@@ -102,6 +115,7 @@ SuitMode currentMode;
 // with the #defines above as first-boot defaults ───────────────
 String currentBackendHost;
 int currentBackendPort;
+String currentBackendScheme;
 String currentSoldierId;
 
 // ── Forward declarations ───────────────────────────────────────
@@ -117,7 +131,7 @@ String buildVitalsJson();
 String buildLocationJson();
 bool consumeShockEvent(float &peakAccelG, float &durationMs);
 void loadBackendConfig();
-void saveBackendConfig(const String &host, int port, const String &soldierId);
+void saveBackendConfig(const String &host, int port, const String &scheme, const String &soldierId);
 
 // ── BLE globals ─────────────────────────────────────────────────
 BLEServer* bleServer = nullptr;
@@ -133,6 +147,7 @@ String pendingPassword;
 // Left empty means "app didn't send this field, keep whatever's already stored".
 String pendingBackendHost;
 int pendingBackendPort = 0;
+String pendingBackendScheme;
 String pendingSoldierId;
 
 class ServerCallbacks : public BLEServerCallbacks {
@@ -178,6 +193,9 @@ class WifiConfigCallback : public BLECharacteristicCallbacks {
     pendingBackendHost = backendHost ? String(backendHost) : String("");
 
     pendingBackendPort = doc["backend_port"] | 0;
+
+    const char* backendScheme = doc["backend_scheme"];
+    pendingBackendScheme = backendScheme ? String(backendScheme) : String("");
 
     const char* soldierId = doc["suit_id"] ? doc["suit_id"].as<const char*>() : (doc["soldier_id"] ? doc["soldier_id"].as<const char*>() : nullptr);
     pendingSoldierId = soldierId ? String(soldierId) : String("");
@@ -506,16 +524,23 @@ void loadBackendConfig() {
   prefs.begin("suit", true);
   currentBackendHost = prefs.getString("backend_host", BACKEND_HOST);
   currentBackendPort = prefs.getInt("backend_port", BACKEND_PORT);
+  currentBackendScheme = prefs.getString("backend_scheme", BACKEND_SCHEME);
+  currentBackendScheme.toLowerCase();
+  if (currentBackendScheme != "http" && currentBackendScheme != "https") {
+    Serial.println("[Config] Invalid backend scheme; using HTTP");
+    currentBackendScheme = "http";
+  }
   currentSoldierId = prefs.getString("soldier_id", SOLDIER_ID);
   prefs.end();
-  Serial.printf("[Config] Backend %s:%d, soldier_id=%s\n",
-                currentBackendHost.c_str(), currentBackendPort, currentSoldierId.c_str());
+  Serial.printf("[Config] Backend %s://%s:%d, soldier_id=%s\n",
+                currentBackendScheme.c_str(), currentBackendHost.c_str(), currentBackendPort, currentSoldierId.c_str());
 }
 
-void saveBackendConfig(const String &host, int port, const String &soldierId) {
+void saveBackendConfig(const String &host, int port, const String &scheme, const String &soldierId) {
   prefs.begin("suit", false);
   if (host.length() > 0) prefs.putString("backend_host", host);
   if (port > 0) prefs.putInt("backend_port", port);
+  if (scheme == "http" || scheme == "https") prefs.putString("backend_scheme", scheme);
   if (soldierId.length() > 0) prefs.putString("soldier_id", soldierId);
   prefs.end();
 }
@@ -549,8 +574,26 @@ void postJson(const char* path, const String& body) {
   }
 
   HTTPClient http;
-  String url = String("http://") + currentBackendHost + ":" + String(currentBackendPort) + path;
-  http.begin(url);
+  String url = currentBackendScheme + "://" + currentBackendHost + ":" + String(currentBackendPort) + path;
+
+  if (currentBackendScheme == "https") {
+#if HAS_CERT_BUNDLE
+    WiFiClientSecure secureClient;
+    secureClient.setCACertBundle(rootca_crt_bundle_attach);
+    if (!http.begin(secureClient, url)) {
+      Serial.printf("[WiFi] Could not start HTTPS request to %s\n", url.c_str());
+      return;
+    }
+#else
+    Serial.println("[WiFi] HTTPS requires an ESP32 framework with the certificate bundle");
+    return;
+#endif
+  } else {
+    if (!http.begin(url)) {
+      Serial.printf("[WiFi] Could not start HTTP request to %s\n", url.c_str());
+      return;
+    }
+  }
   http.addHeader("Content-Type", "application/json");
 
   int code = http.POST(body);
@@ -721,7 +764,7 @@ void loop() {
     pendingWifiSwitch = false;
     Serial.printf("[BLE] Saving new WiFi credentials for '%s'\n", pendingSsid.c_str());
     saveWifiCredentials(pendingSsid, pendingPassword);
-    saveBackendConfig(pendingBackendHost, pendingBackendPort, pendingSoldierId);
+    saveBackendConfig(pendingBackendHost, pendingBackendPort, pendingBackendScheme, pendingSoldierId);
     saveModeAndReboot(MODE_WIFI);
   }
 

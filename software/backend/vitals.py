@@ -1,4 +1,4 @@
-#Receives live sensor data from suits (HR, SpO2, temp, accelerometer),
+# Receives live sensor data from suits or ESP32 devices (HR, SpO2, temp, accelerometer),
 # validates it, stores it, and returns the latest readings per soldier.
 from datetime import datetime
 from alerts import evaluate_and_create_alerts
@@ -9,16 +9,13 @@ from sqlalchemy import desc
 from pydantic import BaseModel
 from typing import List, Optional
 
-from database import get_db, VitalsModel, SoldierModel, get_soldier_by_ref
+from database import get_db, VitalsModel, SoldierModel
 from auth import get_current_admin
 from config import (
     HR_CRITICAL_THRESHOLD,
     SPO2_CRITICAL_THRESHOLD,
     TEMP_CRITICAL_THRESHOLD
 )
-# ⚠ NEW — these were never imported or called anywhere in the original
-# file, which is why no score was ever computed regardless of what data
-# came in.
 from triage import calculate_score
 from blast import compute_blast_severity
 
@@ -32,13 +29,18 @@ class VitalsIn(BaseModel):
     spo2: Optional[int] = None
     temp: Optional[float] = None
     battery: Optional[int] = None
-    # ⚠ NEW — the firmware already sends these, but this schema had no
-    # fields for them, so Pydantic silently dropped them on every request.
+    
+    # Existing extended fields
     activity_index: Optional[int] = None
     respiratory_rate: Optional[int] = None
     peak_accel_g: Optional[float] = None
     duration_ms: Optional[float] = None
-    blast_timestamp: Optional[datetime] = None  # firmware sends ISO 8601 "...Z"; pydantic parses this automatically
+    blast_timestamp: Optional[datetime] = None
+    
+    # NEW: ESP32 / Device tracking fields
+    device_id: Optional[str] = None        # e.g., ESP32 MAC address or serial
+    connection_type: Optional[str] = None  # "wifi", "ble", or "suit"
+
 
 class VitalsOut(BaseModel):
     id: int
@@ -50,9 +52,12 @@ class VitalsOut(BaseModel):
     recorded_at: datetime
     hr_zone: str
     status_flags: List[str]
-    # ⚠ NEW — surfaces the TA-CSS result computed during ingest
     score: Optional[float] = None
     classification: Optional[str] = None
+    
+    # NEW: ESP32 tracking fields in output
+    device_id: Optional[str] = None
+    connection_type: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -92,22 +97,24 @@ def vitals_to_out(v: VitalsModel) -> VitalsOut:
         recorded_at=v.recorded_at,
         hr_zone=get_hr_zone(v.hr),
         status_flags=get_status_flags(v.hr, v.spo2, v.temp, v.battery),
-        # ⚠ NEW — these attributes must exist on VitalsModel; see note below.
         score=getattr(v, "score", None),
         classification=getattr(v, "classification", None),
+        # NEW: Safely get ESP32 fields if they exist on the DB model
+        device_id=getattr(v, "device_id", None),
+        connection_type=getattr(v, "connection_type", None),
     )
 
 
-# ── Routes ────────────────────────────────────────────────────────
-
-# POST /vitals — receive vitals from a suit
-@router.post("/", response_model=VitalsOut)
-async def receive_vitals(
-    body: VitalsIn,
-    db: Session = Depends(get_db)
-):
+# ── Core Processing Logic (Shared by HTTP and WebSocket) ────────
+async def process_vitals_reading(body: VitalsIn, db: Session) -> VitalsModel:
+    """
+    Core logic to validate, save, score, and alert on incoming vitals.
+    Shared by both the HTTP POST endpoint and the WebSocket ESP32 handler.
+    """
     # Confirm soldier exists
-    soldier = get_soldier_by_ref(db, body.soldier_id)
+    soldier = db.query(SoldierModel).filter(
+        SoldierModel.id == body.soldier_id
+    ).first()
     if not soldier:
         raise HTTPException(status_code=404, detail="Soldier not found")
 
@@ -118,26 +125,27 @@ async def receive_vitals(
         spo2=body.spo2,
         temp=body.temp,
         battery=body.battery,
-        # ⚠ NEW — see the schema note at the bottom of this file: these
-        # columns must exist on VitalsModel in database.py or this line
-        # will raise a TypeError.
         activity_index=body.activity_index,
         respiratory_rate=body.respiratory_rate,
         blast_timestamp=body.blast_timestamp,
     )
+    
+    # NEW: Attach ESP32 tracking fields if the database model supports them
+    if hasattr(vitals, 'device_id') and body.device_id:
+        vitals.device_id = body.device_id
+    if hasattr(vitals, 'connection_type') and body.connection_type:
+        vitals.connection_type = body.connection_type
+
     db.add(vitals)
 
-    # ⚠ NEW — turn the raw accelerometer spike the firmware measured into
-    # the continuous blast_severity (0-0.5) that blast.py's multiplier
-    # reads directly off the row. Without this, B always defaulted to 1.0
-    # no matter what the suit reported.
+    # Compute blast severity if accelerometer data is present
     if body.peak_accel_g is not None and body.duration_ms is not None:
-        vitals.blast_severity = compute_blast_severity(
-            body.peak_accel_g, body.duration_ms
-        )
+        if hasattr(vitals, 'blast_severity'):
+            vitals.blast_severity = compute_blast_severity(
+                body.peak_accel_g, body.duration_ms
+            )
 
-    # Auto-update soldier status based on vitals (unchanged — this is the
-    # separate threshold-based system, distinct from the TA-CSS score)
+    # Auto-update soldier status based on vitals
     flags = get_status_flags(body.hr, body.spo2, body.temp, body.battery)
     if any("FAST_HR" in f or "LOW_SPO2" in f or "HIGH_TEMP" in f for f in flags):
         soldier.status = "critical"
@@ -151,12 +159,7 @@ async def receive_vitals(
     db.commit()
     db.refresh(vitals)
 
-    # ⚠ NEW — this is the actual missing link. Nothing previously called
-    # calculate_score(), so no TA-CSS score/classification was ever
-    # produced, regardless of how complete the incoming data was.
-    # calculate_score() returns None (and leaves vitals.score/classification
-    # untouched) if activity_index/respiratory_rate are still missing —
-    # see triage.py's own docstring.
+    # Calculate TA-CSS score and classification
     calculate_score(vitals, db)
     db.commit()  # persist score/classification that calculate_score() set on the row
     db.refresh(vitals)
@@ -170,7 +173,22 @@ async def receive_vitals(
         battery=body.battery,
         db=db
     )
+    
+    # Push live update to connected WebSocket clients (Android app)
     await push_vitals_update(body.soldier_id, db)
+    
+    return vitals
+
+
+# ── Routes ────────────────────────────────────────────────────────
+
+# POST /vitals — receive vitals from a suit or ESP32 (Wi-Fi HTTP POST)
+@router.post("/", response_model=VitalsOut)
+async def receive_vitals(
+    body: VitalsIn,
+    db: Session = Depends(get_db)
+):
+    vitals = await process_vitals_reading(body, db)
     return vitals_to_out(vitals)
 
 

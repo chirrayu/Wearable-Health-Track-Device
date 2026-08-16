@@ -2,7 +2,11 @@
   sampling-rate and communication settings for their wearable suit.
   Field-for-field this maps onto backend/suit_config.py's SuitConfigUpdate
   schema, and the "commands" preview at the bottom mirrors the payload the
-  suit firmware would poll from GET /suit/{soldier_id}/commands.*/
+  suit firmware would poll from GET /suit/{soldier_id}/commands.
+
+  ⚠ CHANGED — this screen now actually loads/saves through
+  SuitConfigState's suspend functions (which call the real backend),
+  instead of a local-only map. See SuitConfigState.kt for details.*/
 package com.example.healthmonitor
 
 import androidx.compose.foundation.background
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // ── Colors ────────────────────────────────────────────────────────
 private val bgDark       = Color(0xFF07111F)
@@ -75,11 +80,16 @@ fun ConfigureSuitScreen() {
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(soldiers, key = { it.id }) { soldier ->
-                    val hasCustomConfig = SuitConfigState.configs.containsKey(soldier.id)
+                    // "Configured" now means "we've loaded/confirmed a
+                    // real config from the backend for this soldier" —
+                    // since the backend auto-creates a default row on
+                    // first load, this fills in as you visit each soldier
+                    // rather than meaning "customized away from default".
+                    val hasLoadedConfig = SuitConfigState.configs.containsKey(soldier.id)
                     SuitPickerRow(
                         soldier = soldier,
                         selected = soldier.id == selectedId,
-                        configured = hasCustomConfig,
+                        configured = hasLoadedConfig,
                         onClick = { selectedId = soldier.id }
                     )
                 }
@@ -151,12 +161,30 @@ fun SuitPickerRow(
 @Composable
 fun SuitConfigPanel(soldier: Soldier) {
 
-    // Local editable draft — only committed to SuitConfigState on Save.
+    val scope = rememberCoroutineScope()
+
+    // ⚠ NEW — actual loading state, since getting the real config is now
+    // a network call instead of an instant local read.
+    var isLoading by remember(soldier.id) { mutableStateOf(true) }
     var draft by remember(soldier.id) { mutableStateOf(SuitConfigState.getConfig(soldier.id).copy()) }
     var isDirty by remember(soldier.id) { mutableStateOf(false) }
     var showEmergencyConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showSavedBanner by remember { mutableStateOf(false) }
+    var showErrorBanner by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    // ⚠ NEW — fetch the soldier's real config from the backend whenever
+    // the selected soldier changes, instead of just reading whatever was
+    // already sitting in the local map (which used to always be a
+    // hardcoded default the very first time).
+    LaunchedEffect(soldier.id) {
+        isLoading = true
+        val loaded = SuitConfigState.loadConfig(soldier.id)
+        draft = (loaded ?: SuitConfigState.getConfig(soldier.id)).copy()
+        isDirty = false
+        isLoading = false
+    }
 
     fun update(block: (SuitConfig) -> SuitConfig) {
         draft = block(draft)
@@ -169,6 +197,12 @@ fun SuitConfigPanel(soldier: Soldier) {
             showSavedBanner = false
         }
     }
+    if (showErrorBanner) {
+        LaunchedEffect(showErrorBanner) {
+            delay(2500)
+            showErrorBanner = false
+        }
+    }
 
     if (showEmergencyConfirm) {
         AlertDialog(
@@ -179,15 +213,30 @@ fun SuitConfigPanel(soldier: Soldier) {
             text = {
                 Text(
                     "This immediately marks ${soldier.rankTitle} ${soldier.name} as CRITICAL " +
-                        "and fires an emergency alert to command, mirroring what the suit does on impact.",
+                            "and fires an emergency alert to command, mirroring what the suit does on impact.",
                     color = textMuted
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    update { it.copy(emergencyMode = true) }
-                    SoldierState.updateSoldier(soldier.copy(status = "critical"))
                     showEmergencyConfirm = false
+                    // ⚠ CHANGED — previously updated SoldierState locally
+                    // by hand. Now calls the real backend endpoint, whose
+                    // side effects (marking soldier critical + firing a
+                    // real alert) flow back through the normal WebSocket
+                    // snapshot/vitals_update path instead of being faked.
+                    scope.launch {
+                        isSaving = true
+                        val ok = SuitConfigState.setEmergencyMode(soldier.id, true)
+                        isSaving = false
+                        if (ok) {
+                            draft = SuitConfigState.getConfig(soldier.id).copy()
+                            isDirty = false
+                            showSavedBanner = true
+                        } else {
+                            showErrorBanner = true
+                        }
+                    }
                 }) {
                     Text("Enable", color = statusRed, fontWeight = FontWeight.Bold)
                 }
@@ -213,10 +262,19 @@ fun SuitConfigPanel(soldier: Soldier) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    draft = SuitConfigState.resetConfig(soldier.id).copy()
-                    isDirty = false
                     showResetConfirm = false
-                    showSavedBanner = true
+                    scope.launch {
+                        isSaving = true
+                        val fresh = SuitConfigState.resetConfig(soldier.id)
+                        isSaving = false
+                        if (fresh != null) {
+                            draft = fresh.copy()
+                            isDirty = false
+                            showSavedBanner = true
+                        } else {
+                            showErrorBanner = true
+                        }
+                    }
                 }) {
                     Text("Reset", color = statusRed, fontWeight = FontWeight.Bold)
                 }
@@ -227,6 +285,13 @@ fun SuitConfigPanel(soldier: Soldier) {
                 }
             }
         )
+    }
+
+    if (isLoading) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = accentBlue)
+        }
+        return
     }
 
     Column(
@@ -267,7 +332,7 @@ fun SuitConfigPanel(soldier: Soldier) {
             Row(
                 modifier = Modifier
                     .background(borderDark.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                    .clickable { showResetConfirm = true }
+                    .clickable(enabled = !isSaving) { showResetConfirm = true }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -370,11 +435,23 @@ fun SuitConfigPanel(soldier: Soldier) {
                 }
                 Switch(
                     checked = draft.emergencyMode,
+                    enabled = !isSaving,
                     onCheckedChange = { checked ->
                         if (checked) {
                             showEmergencyConfirm = true
                         } else {
-                            update { c -> c.copy(emergencyMode = false) }
+                            scope.launch {
+                                isSaving = true
+                                val ok = SuitConfigState.setEmergencyMode(soldier.id, false)
+                                isSaving = false
+                                if (ok) {
+                                    draft = SuitConfigState.getConfig(soldier.id).copy()
+                                    isDirty = false
+                                    showSavedBanner = true
+                                } else {
+                                    showErrorBanner = true
+                                }
+                            }
                         }
                     },
                     colors = SwitchDefaults.colors(
@@ -413,7 +490,10 @@ fun SuitConfigPanel(soldier: Soldier) {
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (showSavedBanner) {
+            if (showErrorBanner) {
+                Text("Save failed — check connection", color = statusRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(16.dp))
+            } else if (showSavedBanner) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = statusGreen, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -428,25 +508,37 @@ fun SuitConfigPanel(soldier: Soldier) {
             Box(
                 modifier = Modifier
                     .background(
-                        if (isDirty) accentBlue.copy(alpha = 0.15f) else borderDark.copy(alpha = 0.3f),
+                        if (isDirty && !isSaving) accentBlue.copy(alpha = 0.15f) else borderDark.copy(alpha = 0.3f),
                         RoundedCornerShape(8.dp)
                     )
                     .border(
                         1.dp,
-                        if (isDirty) accentBlue.copy(alpha = 0.6f) else Color.Transparent,
+                        if (isDirty && !isSaving) accentBlue.copy(alpha = 0.6f) else Color.Transparent,
                         RoundedCornerShape(8.dp)
                     )
-                    .clickable(enabled = isDirty) {
-                        SuitConfigState.saveConfig(soldier.id, draft)
-                        draft = SuitConfigState.getConfig(soldier.id).copy()
-                        isDirty = false
-                        showSavedBanner = true
+                    .clickable(enabled = isDirty && !isSaving) {
+                        // ⚠ CHANGED — previously this just wrote into a
+                        // local map and immediately showed "Saved". Now
+                        // it's a real PUT request; the banner only shows
+                        // success once the backend actually confirms it.
+                        scope.launch {
+                            isSaving = true
+                            val ok = SuitConfigState.saveConfig(soldier.id, draft)
+                            isSaving = false
+                            if (ok) {
+                                draft = SuitConfigState.getConfig(soldier.id).copy()
+                                isDirty = false
+                                showSavedBanner = true
+                            } else {
+                                showErrorBanner = true
+                            }
+                        }
                     }
                     .padding(horizontal = 24.dp, vertical = 12.dp)
             ) {
                 Text(
-                    "SAVE CONFIG",
-                    color = if (isDirty) accentBlue else textMuted,
+                    if (isSaving) "SAVING..." else "SAVE CONFIG",
+                    color = if (isDirty && !isSaving) accentBlue else textMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
