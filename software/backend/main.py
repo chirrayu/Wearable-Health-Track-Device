@@ -2,9 +2,9 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database import init_db
+from database import init_db, SessionLocal
 from config import HOST, PORT, RENDER_EXTERNAL_URL, validate_production_settings
-from auth import get_current_admin
+from auth import get_current_admin, reset_password_from_environment
 from alerts_notifier import init_firebase, register_device_token, unregister_device_token
 
 from auth import router as auth_router
@@ -57,6 +57,11 @@ async def self_ping():
 async def on_startup():
     validate_production_settings()
     init_db()
+    db = SessionLocal()
+    try:
+        reset_password_from_environment(db)
+    finally:
+        db.close()
     init_firebase()
     asyncio.create_task(self_ping())
     print("Server ready")

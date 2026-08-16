@@ -9,6 +9,14 @@
 
 The backend refuses to start in production if default admin credentials or the default JWT secret are used.
 
+### Recovering the admin password without Shell access
+
+If you changed `ADMIN_PASSWORD` after the service was first started, set
+`RESET_ADMIN_PASSWORD=true` in Render **Environment**, deploy once, and log in
+with the current `ADMIN_USERNAME` and `ADMIN_PASSWORD`. Remove the reset
+variable immediately and deploy again; leaving it enabled resets the password
+on every service restart.
+
 ## 2. Build and provision the ESP32
 
 From `hardware`, install PlatformIO and run:
