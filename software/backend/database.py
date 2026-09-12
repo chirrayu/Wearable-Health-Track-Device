@@ -3,19 +3,34 @@
 
 from sqlalchemy import (
     create_engine, Column, String, Integer,
-    Float, Boolean, DateTime, Text, ForeignKey
+    Float, Boolean, DateTime, Text, ForeignKey, event
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
-from config import DATABASE_URL
+from config import DATABASE_URL, SQLCIPHER_KEY, ENVIRONMENT
 
 # ── Engine + session ──────────────────────────────────────────────
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+_connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    _connect_args["check_same_thread"] = False
+elif (DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://")) and ENVIRONMENT == "production":
+    _connect_args["sslmode"] = "require"
+
 engine = create_engine(
     DATABASE_URL,
     connect_args=_connect_args
 )
+
+# Attach SQLCipher encryption key hook if provided
+if SQLCIPHER_KEY and DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def set_sqlite_encryption_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        safe_key = SQLCIPHER_KEY.replace("'", "''")
+        cursor.execute(f"PRAGMA key = '{safe_key}';")
+        cursor.execute("PRAGMA cipher_compatibility = 4;")
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -136,6 +151,15 @@ class AdminCredential(Base):
     password_hash = Column(String, nullable=False)
 
 
+class UserCredential(Base):
+    __tablename__ = "user_credentials"
+
+    username      = Column(String, primary_key=True)
+    password_hash = Column(String, nullable=False)
+    role          = Column(String, nullable=False, default="operator")  # "admin", "commander", "medic", "operator"
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+
 # ⚠ NEW — Tracks the physical ESP32 hardware state
 class ESP32DeviceModel(Base):
     __tablename__ = "esp32_devices"
@@ -162,6 +186,22 @@ class ESP32DeviceModel(Base):
 # ── DB init helper ────────────────────────────────────────────────
 def init_db():
     Base.metadata.create_all(bind=engine)
+    
+    # Auto-migrate missing columns on existing SQLite/Postgres tables
+    with engine.connect() as conn:
+        for table, col, col_type in [
+            ("vitals", "device_id", "VARCHAR"),
+            ("vitals", "connection_type", "VARCHAR"),
+            ("vitals", "blast_severity", "FLOAT"),
+            ("vitals", "blast_timestamp", "DATETIME"),
+            ("vitals", "score", "FLOAT"),
+            ("vitals", "classification", "VARCHAR"),
+        ]:
+            try:
+                conn.execute(__import__("sqlalchemy").text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass # Column already exists
 
 
 # ── Dependency for FastAPI routes ─────────────────────────────────
